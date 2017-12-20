@@ -124,7 +124,7 @@ void loop() {
     upDownButtonState = upDownReading;
 
     // LOW to trigger on release, HIGH to trigger on press
-    if (upDownButtonState == LOW) {
+    if (upDownButtonState == HIGH) {
       lastUmbrellaDebounceTime = millis();
       currentMonitorDelayStartTime = millis();
 
@@ -162,7 +162,7 @@ void loop() {
     /*Serial.print("currentValue: ");
     Serial.print(currentValue);
     Serial.print("\t currentVoltage: ");
-    Serial.print(currentVoltage);
+    Serial.println(currentVoltage);
     Serial.print("\t openingVoltThreshold: ");
     Serial.print(openingVoltThreshold);
     Serial.print("\t closingVoltThreshold: ");
@@ -173,7 +173,7 @@ void loop() {
         upDownState = OPEN;
       }
     } else if (upDownState == CLOSING) {
-      if (currentVoltage <= closingVoltThreshold) {
+      if (currentVoltage >= closingVoltThreshold) {
         upDownState = CLOSED;
       }
     }
