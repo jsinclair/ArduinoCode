@@ -36,8 +36,9 @@ int lastUpDownButtonState = LOW;
 
 
 // Lights Pins
+const int dayNightAnalog = A3;     // the number of the Day/Night pin
+const float dayNightVoltageThreshold = 2.5; // the nnV for the day night sensor. Higher means its day, lower is night.
 const int lightButtonPin = 3;     // the number of the lightButton pin
-const int dayNightPin = 4;     // the number of the Day/Night pin
 const int lightsOutPin = 8;      // the LED pin for lights
 int lightButtonState;         // variable for reading the upDownButton status
 int lastLightButtonState = LOW;
@@ -55,7 +56,6 @@ int currentValue = 0;        // value read from the current monitor analog
 
 void setup() {
   // initialize lights pins
-  pinMode(dayNightPin, INPUT);
   pinMode(lightButtonPin, INPUT);
   pinMode(lightsOutPin, OUTPUT);
   // initialize light states
@@ -82,24 +82,29 @@ void loop() {
   // SOLAR MONITOR
   // read the analog in value:
   solarValue = analogRead(solarAnalogInPin);
-  // Convert the raw data value (0 - 1023) to voltage (0.0V - 5.0V):
-  float solarVoltage = solarValue * (5.0 / 1024.0);
+  // Convert the raw data value to voltage:
+  float solarVoltage = analogToVoltage(solarValue);
   // write to the solar led based on the voltage and threshold:
   digitalWrite(solarLedOutPin, solarVoltage >= solarVoltageThreshold ? HIGH : LOW);
 
   // BATTERY MONITOR
   // read the analog in value:
   batteryValue = analogRead(batteryAnalogInPin);
-  // Convert the raw data value (0 - 1023) to voltage (0.0V - 5.0V):
-  float batteryVoltage = batteryValue * (5.0 / 1024.0);
+  // Convert the raw data value to voltage:
+  float batteryVoltage = analogToVoltage(batteryValue);
   // write to the battery led based on the voltage and threshold:
   digitalWrite(batteryLedOutPin, batteryVoltage < batteryVoltageLimit3 ? HIGH : LOW);
+
+  // DAY/NIGHT MONITOR
+  // read the analog in value:
+  int dayNightValue = analogRead(dayNightAnalog);
+  // Convert the raw data value to voltage, and decide day or night based on the result
+  bool isDay = analogToVoltage(dayNightValue) > dayNightVoltageThreshold;
 
   // Handle USB Charger
   digitalWrite(usbChargerLedOutPin, batteryVoltage >= batteryVoltageLimit1);
 
   // Handle Lights
-  int dayNightRead = digitalRead(dayNightPin);
   // read the state of the light switch into a local variable:
   int lightSwitchRead = digitalRead(lightButtonPin);
 
@@ -115,7 +120,7 @@ void loop() {
   }
   lastLightButtonState = lightSwitchRead;
 
-  digitalWrite(lightsOutPin, batteryVoltage < batteryVoltageLimit2 ? LOW : (dayNightRead == HIGH ? HIGH : (lightState)));
+  digitalWrite(lightsOutPin, batteryVoltage < batteryVoltageLimit2 ? LOW : (isDay ? lightState : LOW));
 
   // OPENING AND CLOSING UMBRELLA
   int upDownReading = digitalRead(upDownButtonPin);
@@ -183,3 +188,9 @@ void loop() {
   digitalWrite(openingLedOutPin, upDownState == OPENING);
   digitalWrite(closingLedOutPin, upDownState == CLOSING);
 }
+
+// Convert the raw data value (0 - 1023) to voltage (0.0V - 5.0V):
+float analogToVoltage(int analogReadValue) {
+  return analogReadValue * (5.0 / 1024.0);
+}
+

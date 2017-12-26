@@ -1,5 +1,6 @@
 persist umbrella state
 day = HIGH, night = LOW
+day/night needs to be analog, now on A3
 Only listen to light button at night.
 differentiate between manual stop and current stop, for lights
 only allow lights on 'current open'
