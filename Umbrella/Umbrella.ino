@@ -1,4 +1,6 @@
 
+#include <EEPROM.h>
+
 const float solarVoltageThreshold = 2.5; // the nnV for the solar power
 const float batteryVoltageLimit1 = 4.0; // The first limit for the battery, disables USB charger when battery level is lower than this
 const float batteryVoltageLimit2 = 2.5; // The second limit for the battery, disables light when battery level is lower than this
@@ -29,6 +31,7 @@ const int OPEN = 0;
 const int OPENING = 1;
 const int CLOSED = 2;
 const int CLOSING = 3;
+const int MANUAL_OPEN = 4;
 // Opening and closing variables
 int upDownButtonState;         // variable for reading the upDownButton status
 int upDownState = CLOSED;
@@ -54,6 +57,8 @@ int solarValue = 0;        // value read from the solar analog
 int batteryValue = 0;        // value read from the battery analog
 int currentValue = 0;        // value read from the current monitor analog
 
+int stateAddress = 0;
+
 void setup() {
   // initialize lights pins
   pinMode(lightButtonPin, INPUT);
@@ -75,6 +80,19 @@ void setup() {
   pinMode(usbChargerLedOutPin, OUTPUT);
 
   Serial.begin(9600);
+
+  // Configure the initial umbrella state, reading from the EEPROM and setting it to closed if an invalid value is read.
+  upDownState = EEPROM.read(stateAddress);
+
+  Serial.print(stateAddress);
+  Serial.print("\t");
+  Serial.print(upDownState);
+
+  if (upDownState < 0 || upDownState > MANUAL_OPEN) {
+    upDownState = CLOSED;
+  }
+  Serial.print("\t");
+  Serial.println(upDownState);
 }
 
 void loop() {
@@ -135,10 +153,11 @@ void loop() {
 
       switch (upDownState) {
         case OPEN:
+        case MANUAL_OPEN:
           upDownState = CLOSING;
           break;
         case OPENING:
-          upDownState = OPEN;
+          upDownState = MANUAL_OPEN;
           break;
         case CLOSED:
           // This depends on the battery level. If its too low, it must only close.
@@ -187,6 +206,9 @@ void loop() {
   // set the LED:
   digitalWrite(openingLedOutPin, upDownState == OPENING);
   digitalWrite(closingLedOutPin, upDownState == CLOSING);
+
+  // Save the umbrella state
+  EEPROM.update(stateAddress, upDownState);
 }
 
 // Convert the raw data value (0 - 1023) to voltage (0.0V - 5.0V):
