@@ -1,10 +1,23 @@
 
 #include <EEPROM.h>
 
-const float solarVoltageThreshold = 2.5; // the nnV for the solar power
-const float batteryVoltageLimit1 = 4.0; // The first limit for the battery, disables USB charger when battery level is lower than this
-const float batteryVoltageLimit2 = 2.5; // The second limit for the battery, disables light when battery level is lower than this
-const float batteryVoltageLimit3 = 1.0; // The third limit for the battery, lights up D10 when battery level is lower than this
+// Threshold struct to manage the thresholds which need to accound for variance on either side after triggering (AKA kind of hysteresis)
+struct AnalogThreshold {
+    float threshold; // The actual threshold value, in volts: nnV
+    float play; // The possible variance on either side of the threshold
+    bool inPlay; // True directly after the threshold is passed, until the difference exceeds the play in either direction.
+    float lastVoltage; // The last check value. This will always be updated until a change is triggered, at which point it will only start updating again once it exceeds the play range.
+};
+
+void thresholdCheck(AnalogThreshold* analogThreshold, float analogVoltage);
+
+// The various thresholds. The first number is the actual threshold number, the second is the play on either side, the last two parameters should always be false and -1.0;
+AnalogThreshold solarVoltageThreshold = {2.5, 0.3, false, -1.0}; // Threshold for solar power
+AnalogThreshold batteryVoltageLimit1 = {4.0, 0.3, false, -1.0}; // The first limit for the battery, disables USB charger when battery level is lower than this
+AnalogThreshold batteryVoltageLimit2 = {2.5, 0.3, false, -1.0}; // The second limit for the battery, disables light and limits umbrella to closing when battery level is lower than this
+AnalogThreshold batteryVoltageLimit3 = {1.0, 0.3, false, -1.0}; // The third limit for the battery, lights up D10 when battery level is lower than this
+AnalogThreshold dayNightVoltageThreshold = {2.5, 0.3, false, -1.0}; // The third limit for the battery, lights up D10 when battery level is lower than this
+
 const float openingAmpLimit = 10.0; // the nnA for the opening current limit
 const float closingAmpLimit = 2.5; // the nnA for the closing current limit
 unsigned long debounceDelay = 200; // the button debounce time, in milliseconds
@@ -37,10 +50,8 @@ int upDownButtonState;         // variable for reading the upDownButton status
 int upDownState = CLOSED;
 int lastUpDownButtonState = LOW;
 
-
 // Lights Pins
 const int dayNightAnalog = A3;     // the number of the Day/Night pin
-const float dayNightVoltageThreshold = 2.5; // the nnV for the day night sensor. Higher means its day, lower is night.
 const int lightButtonPin = 3;     // the number of the lightButton pin
 const int lightsOutPin = 8;      // the LED pin for lights
 int lightButtonState;         // variable for reading the upDownButton status
@@ -84,15 +95,9 @@ void setup() {
   // Configure the initial umbrella state, reading from the EEPROM and setting it to closed if an invalid value is read.
   upDownState = EEPROM.read(stateAddress);
 
-  Serial.print(stateAddress);
-  Serial.print("\t");
-  Serial.print(upDownState);
-
   if (upDownState < 0 || upDownState > MANUAL_OPEN) {
     upDownState = CLOSED;
   }
-  Serial.print("\t");
-  Serial.println(upDownState);
 }
 
 void loop() {
@@ -100,10 +105,10 @@ void loop() {
   // SOLAR MONITOR
   // read the analog in value:
   solarValue = analogRead(solarAnalogInPin);
-  // Convert the raw data value to voltage:
-  float solarVoltage = analogToVoltage(solarValue);
+  // Convert the raw data value to voltage and do the solar voltage threshold check
+  thresholdCheck(&solarVoltageThreshold, analogToVoltage(solarValue));
   // write to the solar led based on the voltage and threshold:
-  digitalWrite(solarLedOutPin, solarVoltage >= solarVoltageThreshold ? HIGH : LOW);
+  digitalWrite(solarLedOutPin, solarVoltageThreshold.lastVoltage >= solarVoltageThreshold.threshold ? HIGH : LOW);
 
   // BATTERY MONITOR
   // read the analog in value:
@@ -111,16 +116,20 @@ void loop() {
   // Convert the raw data value to voltage:
   float batteryVoltage = analogToVoltage(batteryValue);
   // write to the battery led based on the voltage and threshold:
-  digitalWrite(batteryLedOutPin, batteryVoltage < batteryVoltageLimit3 ? HIGH : LOW);
+  thresholdCheck(&batteryVoltageLimit3, batteryVoltage);
+  digitalWrite(batteryLedOutPin, batteryVoltageLimit3.lastVoltage < batteryVoltageLimit3.threshold ? HIGH : LOW);
 
   // DAY/NIGHT MONITOR
   // read the analog in value:
   int dayNightValue = analogRead(dayNightAnalog);
   // Convert the raw data value to voltage, and decide day or night based on the result
-  bool isDay = analogToVoltage(dayNightValue) > dayNightVoltageThreshold;
+  Serial.println(analogToVoltage(dayNightValue));
+  thresholdCheck(&dayNightVoltageThreshold, analogToVoltage(dayNightValue));
+  bool isDay = dayNightVoltageThreshold.lastVoltage > dayNightVoltageThreshold.threshold;
 
   // Handle USB Charger
-  digitalWrite(usbChargerLedOutPin, batteryVoltage >= batteryVoltageLimit1);
+  thresholdCheck(&batteryVoltageLimit1, batteryVoltage);
+  digitalWrite(usbChargerLedOutPin, batteryVoltageLimit1.lastVoltage >= batteryVoltageLimit1.threshold);
 
   // Handle Lights
   // read the state of the light switch into a local variable:
@@ -138,7 +147,8 @@ void loop() {
   }
   lastLightButtonState = lightSwitchRead;
 
-  digitalWrite(lightsOutPin, batteryVoltage < batteryVoltageLimit2 ? LOW : (isDay ? lightState : LOW));
+  thresholdCheck(&batteryVoltageLimit2, batteryVoltage);
+  digitalWrite(lightsOutPin, batteryVoltageLimit2.lastVoltage < batteryVoltageLimit2.threshold ? LOW : (isDay ? LOW : lightState));
 
   // OPENING AND CLOSING UMBRELLA
   int upDownReading = digitalRead(upDownButtonPin);
@@ -161,7 +171,7 @@ void loop() {
           break;
         case CLOSED:
           // This depends on the battery level. If its too low, it must only close.
-          upDownState = batteryVoltage < batteryVoltageLimit2 ? CLOSING : OPENING;
+          upDownState = batteryVoltageLimit2.lastVoltage < batteryVoltageLimit2.threshold ? CLOSING : OPENING;
           break;
         case CLOSING:
           upDownState = CLOSED;
@@ -173,7 +183,7 @@ void loop() {
   lastUpDownButtonState = upDownReading;
 
   // Adjust state based on battery level
-  if (batteryVoltage < batteryVoltageLimit2 && (upDownState == OPENING)) {
+  if (batteryVoltageLimit2.lastVoltage < batteryVoltageLimit2.threshold && (upDownState == OPENING)) {
     // Setting the state to OPEN will make it only update to CLOSING on a button press, which is the limitation when the battery is low.
     upDownState = OPEN;
   }
@@ -183,14 +193,6 @@ void loop() {
     currentValue = analogRead(currentAnalogInPin);
     // Convert the raw data value (0 - 1023) to voltage (0.0V - 5.0V):
     float currentVoltage = currentValue * (5.0 / 1024.0);
-    /*Serial.print("currentValue: ");
-    Serial.print(currentValue);
-    Serial.print("\t currentVoltage: ");
-    Serial.println(currentVoltage);
-    Serial.print("\t openingVoltThreshold: ");
-    Serial.print(openingVoltThreshold);
-    Serial.print("\t closingVoltThreshold: ");
-    Serial.println(closingVoltThreshold);*/
 
     if (upDownState == OPENING) {
       if (currentVoltage >= openingVoltThreshold) {
@@ -214,5 +216,25 @@ void loop() {
 // Convert the raw data value (0 - 1023) to voltage (0.0V - 5.0V):
 float analogToVoltage(int analogReadValue) {
   return analogReadValue * (5.0 / 1024.0);
+}
+
+// Checks whether or not the new voltage should trigger a change in state
+void thresholdCheck(AnalogThreshold* analogThreshold, float analogVoltage) {
+  if (analogThreshold->inPlay) {
+    if (abs((analogVoltage - analogThreshold->threshold)) > analogThreshold->play) {
+      analogThreshold->inPlay = false;
+    }
+  }
+
+  if (analogThreshold->lastVoltage == -1) {
+    analogThreshold->lastVoltage = analogVoltage;
+  } else if (!analogThreshold->inPlay) {
+    if ((analogThreshold->lastVoltage >= analogThreshold->threshold && analogVoltage < analogThreshold->threshold) ||
+      (analogThreshold->lastVoltage < analogThreshold->threshold && analogVoltage >= analogThreshold->threshold)) {
+      analogThreshold->inPlay = true;
+    }
+    
+    analogThreshold->lastVoltage = analogVoltage;
+  }
 }
 
