@@ -5,3 +5,5 @@ DONE - Only listen to light button at night.
 DONE - differentiate between manual stop and current stop, for lights
 DONE - only allow lights on 'current open'
 DONE - implement hysteresis for battery levels, day night and the solar (check whether to use two constants or a difference)
+
+Set light button status to off on day
