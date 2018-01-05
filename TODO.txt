@@ -6,4 +6,6 @@ DONE - differentiate between manual stop and current stop, for lights
 DONE - only allow lights on 'current open'
 DONE - implement hysteresis for battery levels, day night and the solar (check whether to use two constants or a difference)
 
-Set light button status to off on day
+DONE - Set light button status to off on day
+DONE - If the umbrella is closed, it should not be possible to switch on the lights and if the lights are left on and the umbrellas is closing the lights should go out. - Fredi
+investigate putting the device to sleep after no interaction

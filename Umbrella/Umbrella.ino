@@ -123,9 +123,13 @@ void loop() {
   // read the analog in value:
   int dayNightValue = analogRead(dayNightAnalog);
   // Convert the raw data value to voltage, and decide day or night based on the result
-  Serial.println(analogToVoltage(dayNightValue));
   thresholdCheck(&dayNightVoltageThreshold, analogToVoltage(dayNightValue));
   bool isDay = dayNightVoltageThreshold.lastVoltage > dayNightVoltageThreshold.threshold;
+
+  if (isDay) {
+    // When its day. set the light state to LOW, so they dont automatically turn on the next day.
+    lightState = LOW;
+  }
 
   // Handle USB Charger
   thresholdCheck(&batteryVoltageLimit1, batteryVoltage);
@@ -147,8 +151,8 @@ void loop() {
   }
   lastLightButtonState = lightSwitchRead;
 
+  // Check the battery level
   thresholdCheck(&batteryVoltageLimit2, batteryVoltage);
-  digitalWrite(lightsOutPin, batteryVoltageLimit2.lastVoltage < batteryVoltageLimit2.threshold ? LOW : (isDay ? LOW : lightState));
 
   // OPENING AND CLOSING UMBRELLA
   int upDownReading = digitalRead(upDownButtonPin);
@@ -204,8 +208,16 @@ void loop() {
       }
     }
   }
+  
+  // If the upbrella state isnt open, turn off the lights
+  if (upDownState != OPEN) {
+    lightState = LOW;
+  }
+  
+  // Set the light state
+  digitalWrite(lightsOutPin, batteryVoltageLimit2.lastVoltage < batteryVoltageLimit2.threshold ? LOW : (isDay ? LOW : lightState));
 
-  // set the LED:
+  // set opening and closing the LEDs:
   digitalWrite(openingLedOutPin, upDownState == OPENING);
   digitalWrite(closingLedOutPin, upDownState == CLOSING);
 
