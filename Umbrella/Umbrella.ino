@@ -12,7 +12,6 @@ struct AnalogThreshold {
 void thresholdCheck(AnalogThreshold* analogThreshold, float analogVoltage);
 
 // The various thresholds. The first number is the actual threshold number, the second is the play on either side, the last two parameters should always be false and -1.0;
-AnalogThreshold solarVoltageThreshold = {2.5, 0.3, false, -1.0}; // Threshold for solar power
 AnalogThreshold batteryVoltageLimit1 = {4.0, 0.3, false, -1.0}; // The first limit for the battery, disables USB charger when battery level is lower than this
 AnalogThreshold batteryVoltageLimit2 = {2.5, 0.3, false, -1.0}; // The second limit for the battery, disables light and limits umbrella to closing when battery level is lower than this
 AnalogThreshold batteryVoltageLimit3 = {1.0, 0.3, false, -1.0}; // The third limit for the battery, lights up D10 when battery level is lower than this
@@ -23,18 +22,14 @@ const float closingAmpLimit = 2.5; // the nnA for the closing current limit
 unsigned long debounceDelay = 200; // the button debounce time, in milliseconds
 unsigned long currentMonitorDelay = 500; // Current monitor delay for opening and closing, in milliseconds
 
-// Solar constants
-const int solarAnalogInPin = A6;  // Analog input pin that the potentiometer is attached to
-const int solarLedOutPin = 9; // Digital output pin that the LED is attached to
-
 // Battery and USB constants
-const int batteryAnalogInPin = A5;  // Analog input pin that the potentiometer is attached to
+const int batteryAnalogInPin = A2;  // Analog input pin that the potentiometer is attached to
 const int batteryLedOutPin = 10; // Digital output pin that the LED is attached to
 const int usbChargerLedOutPin = 11; // Digital output pin that the USB LED is attached to
 
 // Opening and Closing constants and variables
 const int upDownButtonPin = 2;     // the number of the upDownButton pin
-const int currentAnalogInPin = A4;  // Analog input pin that the potentiometer is attached to
+const int currentAnalogInPin = A1;  // Analog input pin that the potentiometer is attached to
 const int openingLedOutPin = 6; // Digital output pin that the LED is attached to
 const int closingLedOutPin = 7; // Digital output pin that the LED is attached to
 const float openingVoltThreshold = (0.5 + (openingAmpLimit * 0.13)); // the voltage for the opening current limit
@@ -51,7 +46,7 @@ int upDownState = CLOSED;
 int lastUpDownButtonState = LOW;
 
 // Lights Pins
-const int dayNightAnalog = A3;     // the number of the Day/Night pin
+const int dayNightAnalog = A0;     // the number of the Day/Night pin
 const int lightButtonPin = 3;     // the number of the lightButton pin
 const int lightsOutPin = 8;      // the LED pin for lights
 int lightButtonState;         // variable for reading the upDownButton status
@@ -64,7 +59,6 @@ unsigned long lastUmbrellaDebounceTime = 0;  // the last time the output pin was
 unsigned long lastLightDebounceTime = 0;  // the last time the light button was pressed
 unsigned long currentMonitorDelayStartTime = 0; // The start time of a current monitor delay
 
-int solarValue = 0;        // value read from the solar analog
 int batteryValue = 0;        // value read from the battery analog
 int currentValue = 0;        // value read from the current monitor analog
 
@@ -85,8 +79,7 @@ void setup() {
   digitalWrite(openingLedOutPin, LOW);
   digitalWrite(closingLedOutPin, LOW);
 
-  // initialize the battery, solar and usb output pins:
-  pinMode(solarLedOutPin, OUTPUT);
+  // initialize the battery and usb output pins:
   pinMode(batteryLedOutPin, OUTPUT);
   pinMode(usbChargerLedOutPin, OUTPUT);
 
@@ -101,14 +94,6 @@ void setup() {
 }
 
 void loop() {
-
-  // SOLAR MONITOR
-  // read the analog in value:
-  solarValue = analogRead(solarAnalogInPin);
-  // Convert the raw data value to voltage and do the solar voltage threshold check
-  thresholdCheck(&solarVoltageThreshold, analogToVoltage(solarValue));
-  // write to the solar led based on the voltage and threshold:
-  digitalWrite(solarLedOutPin, solarVoltageThreshold.lastVoltage >= solarVoltageThreshold.threshold ? HIGH : LOW);
 
   // BATTERY MONITOR
   // read the analog in value:
