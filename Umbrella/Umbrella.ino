@@ -40,10 +40,14 @@ const int OPENING = 1;
 const int CLOSED = 2;
 const int CLOSING = 3;
 const int MANUAL_OPEN = 4;
+const int CLOSED_DEBOUNCE = 5; // This is used 
 // Opening and closing variables
 int upDownButtonState;         // variable for reading the upDownButton status
 int upDownState = CLOSED;
 int lastUpDownButtonState = LOW;
+// Closed debounce constants and variables
+const long closedDebounceDuration = 1500;
+long closedDebounceRunTime = 0;
 
 // Lights Pins
 const int dayNightAnalog = A0;     // the number of the Day/Night pin
@@ -90,6 +94,9 @@ void setup() {
 
   if (upDownState < 0 || upDownState > MANUAL_OPEN) {
     upDownState = CLOSED;
+  } else if (upDownState == CLOSED_DEBOUNCE) {
+    // Run the closed debounce if the umbrella was busy with it when it turned off.
+    closedDebounceRunTime = millis();
   }
 }
 
@@ -142,7 +149,7 @@ void loop() {
   // OPENING AND CLOSING UMBRELLA
   int upDownReading = digitalRead(upDownButtonPin);
 
-  if (upDownReading != lastUpDownButtonState && (millis() - lastUmbrellaDebounceTime) > debounceDelay) {
+  if (upDownState != CLOSED_DEBOUNCE && upDownReading != lastUpDownButtonState && (millis() - lastUmbrellaDebounceTime) > debounceDelay) {
     upDownButtonState = upDownReading;
 
     // LOW to trigger on release, HIGH to trigger on press
@@ -189,9 +196,14 @@ void loop() {
       }
     } else if (upDownState == CLOSING) {
       if (currentVoltage >= closingVoltThreshold) {
-        upDownState = CLOSED;
+        // Initialise the debounce to relieve stress on the closing spring.
+        upDownState = CLOSED_DEBOUNCE;
+        closedDebounceRunTime = millis();
       }
     }
+  } else if (upDownState == CLOSED_DEBOUNCE && millis() - closedDebounceRunTime > closedDebounceDuration) {
+    // If the debounce has run its course, set the state to closed
+    upDownState = CLOSED;
   }
   
   // If the upbrella state isnt open, turn off the lights
@@ -203,7 +215,7 @@ void loop() {
   digitalWrite(lightsOutPin, batteryVoltageLimit2.lastVoltage < batteryVoltageLimit2.threshold ? LOW : (isDay ? LOW : lightState));
 
   // set opening and closing the LEDs:
-  digitalWrite(openingLedOutPin, upDownState == OPENING);
+  digitalWrite(openingLedOutPin, (upDownState == OPENING || upDownState == CLOSED_DEBOUNCE));
   digitalWrite(closingLedOutPin, upDownState == CLOSING);
 
   // Save the umbrella state
