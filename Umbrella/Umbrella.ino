@@ -46,7 +46,7 @@ int upDownButtonState;         // variable for reading the upDownButton status
 int upDownState = CLOSED;
 int lastUpDownButtonState = LOW;
 // Closed debounce constants and variables
-const long closedDebounceDuration = 1500;
+const long closedDebounceDuration = 1000;
 long closedDebounceRunTime = 0;
 
 // Lights Pins
