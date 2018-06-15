@@ -42,7 +42,7 @@ const int OPENING = 1;
 const int CLOSED = 2;
 const int CLOSING = 3;
 const int MANUAL_OPEN = 4;
-const int CLOSED_DEBOUNCE = 5; // This is used 
+const int CLOSED_DEBOUNCE = 5; // This is used to reverse the motor a little bit after the umbrella finishes opening
 // Opening and closing variables
 int upDownButtonState;         // variable for reading the upDownButton status
 int upDownState = CLOSED;
