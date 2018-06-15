@@ -12,10 +12,12 @@ struct AnalogThreshold {
 void thresholdCheck(AnalogThreshold* analogThreshold, float analogVoltage);
 
 // The various thresholds. The first number is the actual threshold number, the second is the play on either side, the last two parameters should always be false and -1.0;
-AnalogThreshold batteryVoltageLimit1 = {4.0, 0.3, false, -1.0}; // The first limit for the battery, disables USB charger when battery level is lower than this
+AnalogThreshold batteryVoltageLimit1 = {3.0, 0.3, false, -1.0}; // The first limit for the battery, disables USB charger when battery level is lower than this
 AnalogThreshold batteryVoltageLimit2 = {2.5, 0.3, false, -1.0}; // The second limit for the battery, disables light and limits umbrella to closing when battery level is lower than this
 AnalogThreshold batteryVoltageLimit3 = {1.0, 0.3, false, -1.0}; // The third limit for the battery, lights up D10 when battery level is lower than this
 AnalogThreshold dayNightVoltageThreshold = {2.5, 0.3, false, -1.0}; // The third limit for the battery, lights up D10 when battery level is lower than this
+
+const float voltageLimit = 3.3; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
 
 const float openingAmpLimit = 10.0; // the nnA for the opening current limit
 const float closingAmpLimit = 2.5; // the nnA for the closing current limit
@@ -187,8 +189,8 @@ void loop() {
   // Handle opening and closing based on state, after the current monitor delay period
   if (millis() > (currentMonitorDelayStartTime + currentMonitorDelay) && (upDownState == OPENING || upDownState == CLOSING)) {
     currentValue = analogRead(currentAnalogInPin);
-    // Convert the raw data value (0 - 1023) to voltage (0.0V - 5.0V):
-    float currentVoltage = currentValue * (5.0 / 1024.0);
+    // Convert the raw data value (0 - 1023) to voltage (0.0V - voltageLimitV):
+    float currentVoltage = currentValue * (voltageLimit / 1024.0);
 
     if (upDownState == OPENING) {
       if (currentVoltage >= openingVoltThreshold) {
@@ -222,9 +224,9 @@ void loop() {
   EEPROM.update(stateAddress, upDownState);
 }
 
-// Convert the raw data value (0 - 1023) to voltage (0.0V - 5.0V):
+// Convert the raw data value (0 - 1023) to voltage (0.0V - voltageLimitV):
 float analogToVoltage(int analogReadValue) {
-  return analogReadValue * (5.0 / 1024.0);
+  return analogReadValue * (voltageLimit / 1024.0);
 }
 
 // Checks whether or not the new voltage should trigger a change in state
