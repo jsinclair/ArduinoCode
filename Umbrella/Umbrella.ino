@@ -43,6 +43,7 @@ const int CLOSED = 2;
 const int CLOSING = 3;
 const int MANUAL_OPEN = 4;
 const int CLOSED_DEBOUNCE = 5; // This is used to reverse the motor a little bit after the umbrella finishes opening
+const int CLOSED_DEBOUNCE_PAUSE = 6; // This is used to give the motor a moment to stop before the debounce
 // Opening and closing variables
 int upDownButtonState;         // variable for reading the upDownButton status
 int upDownState = CLOSED;
@@ -50,6 +51,8 @@ int lastUpDownButtonState = LOW;
 // Closed debounce constants and variables
 const long closedDebounceDuration = 1000;
 long closedDebounceRunTime = 0;
+const long closedDebouncePauseDuration = 500;
+long closedDebouncePauseRunTime = 0;
 
 // Lights Pins
 const int dayNightAnalog = A0;     // the number of the Day/Night pin
@@ -96,7 +99,8 @@ void setup() {
 
   if (upDownState < 0 || upDownState > MANUAL_OPEN) {
     upDownState = CLOSED;
-  } else if (upDownState == CLOSED_DEBOUNCE) {
+  } else if (upDownState == CLOSED_DEBOUNCE || upDownState == CLOSED_DEBOUNCE_PAUSE) {
+    upDownState = CLOSED_DEBOUNCE;
     // Run the closed debounce if the umbrella was busy with it when it turned off.
     closedDebounceRunTime = millis();
   }
@@ -151,7 +155,7 @@ void loop() {
   // OPENING AND CLOSING UMBRELLA
   int upDownReading = digitalRead(upDownButtonPin);
 
-  if (upDownState != CLOSED_DEBOUNCE && upDownReading != lastUpDownButtonState && (millis() - lastUmbrellaDebounceTime) > debounceDelay) {
+  if ((upDownState != CLOSED_DEBOUNCE && upDownState != CLOSED_DEBOUNCE_PAUSE) && upDownReading != lastUpDownButtonState && (millis() - lastUmbrellaDebounceTime) > debounceDelay) {
     upDownButtonState = upDownReading;
 
     // LOW to trigger on release, HIGH to trigger on press
@@ -199,13 +203,17 @@ void loop() {
     } else if (upDownState == CLOSING) {
       if (currentVoltage >= closingVoltThreshold) {
         // Initialise the debounce to relieve stress on the closing spring.
-        upDownState = CLOSED_DEBOUNCE;
-        closedDebounceRunTime = millis();
+        upDownState = CLOSED_DEBOUNCE_PAUSE;
+        closedDebouncePauseRunTime = millis();
       }
     }
   } else if (upDownState == CLOSED_DEBOUNCE && millis() - closedDebounceRunTime > closedDebounceDuration) {
     // If the debounce has run its course, set the state to closed
     upDownState = CLOSED;
+  } else if (upDownState == CLOSED_DEBOUNCE_PAUSE && millis() - closedDebouncePauseRunTime > closedDebouncePauseDuration) {
+    // If the debounce has run its course, set the state to closed
+    upDownState = CLOSED_DEBOUNCE;
+    closedDebounceRunTime = millis();
   }
   
   // If the upbrella state isnt open, turn off the lights
