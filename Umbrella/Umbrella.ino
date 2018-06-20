@@ -1,32 +1,37 @@
 
 #include <EEPROM.h>
 
-// Threshold struct to manage the thresholds which need to accound for variance on either side after triggering (AKA kind of hysteresis)
-struct AnalogThreshold {
-    float threshold; // The actual threshold value, in volts: nnV
-    float play; // The possible variance on either side of the threshold
-    bool inPlay; // True directly after the threshold is passed, until the difference exceeds the play in either direction.
-    float lastVoltage; // The last check value. This will always be updated until a change is triggered, at which point it will only start updating again once it exceeds the play range.
+// Float constants for battery thresholds. All values in volts.
+const float usbOnValue = 3.15; // Value at which the usb turns on
+const float usbOffValue = 2.8; // Value at which the usb turns off
+const float batteryLimit2OffValue = 2.6; // Second battery threshold, turns off lights and only allows the umbrella to close when its off.
+const float batteryLimit2OnValue = 3.0;
+const float dayVoltage = 2.8; // If the day/night sensor reads this value or more, the system behaves for day time.
+const float nightVoltage= 2.5; // If the day/night sensor reads this value or less, the system behaves for night time.
+// Constants for opening and closing the umbrella
+const float openingAmpLimit = 10.0; // the nnA for the opening current limit
+const float closingAmpLimit = 2.5; // the nnA for the closing current limit
+const long closedDebounceDuration = 1000; // The time in milliseconds that the motor reverses for after it finishes opening.
+const long closedDebouncePauseDuration = 500; // The time in milliseconds that the system waits before reversing, after opening.
+
+// Hysteresis struct to manage the various thresholds
+struct AnalogHysteresis {
+    float offValue; // The value at which the hysteresis turns off, in volts: nnV
+    float onValue; // The value at which the hysteresis turns on, in volts: nnV
+    bool isOn; // Whether the value we are tracking is on or not
 };
 
-void thresholdCheck(AnalogThreshold* analogThreshold, float analogVoltage);
+void hysteresisCheck(AnalogHysteresis* analogHysteresis, float analogVoltage);
 
-// The various thresholds. The first number is the actual threshold number, the second is the play on either side, the last two parameters should always be false and -1.0;
-AnalogThreshold batteryVoltageLimit1 = {3.0, 0.3, false, -1.0}; // The first limit for the battery, disables USB charger when battery level is lower than this
-AnalogThreshold batteryVoltageLimit2 = {2.5, 0.3, false, -1.0}; // The second limit for the battery, disables light and limits umbrella to closing when battery level is lower than this
-AnalogThreshold batteryVoltageLimit3 = {1.0, 0.3, false, -1.0}; // The third limit for the battery, lights up D10 when battery level is lower than this
-AnalogThreshold dayNightVoltageThreshold = {2.5, 0.3, false, -1.0}; // The third limit for the battery, lights up D10 when battery level is lower than this
+// The various thresholds. The first number is the off value, the second is the on value. The third value is the default state of the check.
+AnalogHysteresis batteryVoltageLimit1 = {usbOffValue, usbOnValue, true}; // The first limit for the battery, disables USB charger when battery level is lower than this
+AnalogHysteresis batteryVoltageLimit2 = {batteryLimit2OffValue, batteryLimit2OnValue, true}; // The second limit for the battery, disables light and limits umbrella to closing when battery level is lower than this
+AnalogHysteresis dayNightVoltageThreshold = {nightVoltage, dayVoltage, true}; // The Day/Night threshold. If the voltage from the light sensor is above this, it is considered day.
 
 const float voltageLimit = 3.3; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
 
-const float openingAmpLimit = 10.0; // the nnA for the opening current limit
-const float closingAmpLimit = 2.5; // the nnA for the closing current limit
-unsigned long debounceDelay = 200; // the button debounce time, in milliseconds
-unsigned long currentMonitorDelay = 500; // Current monitor delay for opening and closing, in milliseconds
-
 // Battery and USB constants
 const int batteryAnalogInPin = A2;  // Analog input pin that the potentiometer is attached to
-const int batteryLedOutPin = 10; // Digital output pin that the LED is attached to
 const int usbChargerLedOutPin = 11; // Digital output pin that the USB LED is attached to
 
 // Opening and Closing constants and variables
@@ -49,10 +54,10 @@ int upDownButtonState;         // variable for reading the upDownButton status
 int upDownState = CLOSED;
 int lastUpDownButtonState = LOW;
 // Closed debounce constants and variables
-const long closedDebounceDuration = 1000;
 long closedDebounceRunTime = 0;
-const long closedDebouncePauseDuration = 500;
 long closedDebouncePauseRunTime = 0;
+unsigned long debounceDelay = 200; // the button debounce time, in milliseconds
+unsigned long currentMonitorDelay = 500; // Current monitor delay for opening and closing, in milliseconds
 
 // Lights Pins
 const int dayNightAnalog = A0;     // the number of the Day/Night pin
@@ -88,8 +93,7 @@ void setup() {
   digitalWrite(openingLedOutPin, LOW);
   digitalWrite(closingLedOutPin, LOW);
 
-  // initialize the battery and usb output pins:
-  pinMode(batteryLedOutPin, OUTPUT);
+  // initialize the usb output pin
   pinMode(usbChargerLedOutPin, OUTPUT);
 
   Serial.begin(9600);
@@ -113,16 +117,13 @@ void loop() {
   batteryValue = analogRead(batteryAnalogInPin);
   // Convert the raw data value to voltage:
   float batteryVoltage = analogToVoltage(batteryValue);
-  // write to the battery led based on the voltage and threshold:
-  thresholdCheck(&batteryVoltageLimit3, batteryVoltage);
-  digitalWrite(batteryLedOutPin, batteryVoltageLimit3.lastVoltage < batteryVoltageLimit3.threshold ? HIGH : LOW);
-
+  
   // DAY/NIGHT MONITOR
   // read the analog in value:
   int dayNightValue = analogRead(dayNightAnalog);
   // Convert the raw data value to voltage, and decide day or night based on the result
-  thresholdCheck(&dayNightVoltageThreshold, analogToVoltage(dayNightValue));
-  bool isDay = dayNightVoltageThreshold.lastVoltage > dayNightVoltageThreshold.threshold;
+  hysteresisCheck(&dayNightVoltageThreshold, analogToVoltage(dayNightValue));
+  bool isDay = dayNightVoltageThreshold.isOn;
 
   if (isDay) {
     // When its day. set the light state to LOW, so they dont automatically turn on the next day.
@@ -130,8 +131,8 @@ void loop() {
   }
 
   // Handle USB Charger
-  thresholdCheck(&batteryVoltageLimit1, batteryVoltage);
-  digitalWrite(usbChargerLedOutPin, batteryVoltageLimit1.lastVoltage >= batteryVoltageLimit1.threshold);
+  hysteresisCheck(&batteryVoltageLimit1, batteryVoltage);
+  digitalWrite(usbChargerLedOutPin, batteryVoltageLimit1.isOn);
 
   // Handle Lights
   // read the state of the light switch into a local variable:
@@ -150,7 +151,7 @@ void loop() {
   lastLightButtonState = lightSwitchRead;
 
   // Check the battery level
-  thresholdCheck(&batteryVoltageLimit2, batteryVoltage);
+  hysteresisCheck(&batteryVoltageLimit2, batteryVoltage);
 
   // OPENING AND CLOSING UMBRELLA
   int upDownReading = digitalRead(upDownButtonPin);
@@ -173,7 +174,7 @@ void loop() {
           break;
         case CLOSED:
           // This depends on the battery level. If its too low, it must only close.
-          upDownState = batteryVoltageLimit2.lastVoltage < batteryVoltageLimit2.threshold ? CLOSING : OPENING;
+          upDownState = !batteryVoltageLimit2.isOn ? CLOSING : OPENING;
           break;
         case CLOSING:
           upDownState = CLOSED;
@@ -185,7 +186,7 @@ void loop() {
   lastUpDownButtonState = upDownReading;
 
   // Adjust state based on battery level
-  if (batteryVoltageLimit2.lastVoltage < batteryVoltageLimit2.threshold && (upDownState == OPENING)) {
+  if (!batteryVoltageLimit2.isOn && (upDownState == OPENING)) {
     // Setting the state to OPEN will make it only update to CLOSING on a button press, which is the limitation when the battery is low.
     upDownState = OPEN;
   }
@@ -220,9 +221,9 @@ void loop() {
   if (upDownState != OPEN) {
     lightState = LOW;
   }
-  
+
   // Set the light state
-  digitalWrite(lightsOutPin, batteryVoltageLimit2.lastVoltage < batteryVoltageLimit2.threshold ? LOW : (isDay ? LOW : lightState));
+  digitalWrite(lightsOutPin, !batteryVoltageLimit2.isOn ? LOW : (isDay ? LOW : lightState));
 
   // set opening and closing the LEDs:
   digitalWrite(openingLedOutPin, (upDownState == OPENING || upDownState == CLOSED_DEBOUNCE));
@@ -238,22 +239,11 @@ float analogToVoltage(int analogReadValue) {
 }
 
 // Checks whether or not the new voltage should trigger a change in state
-void thresholdCheck(AnalogThreshold* analogThreshold, float analogVoltage) {
-  if (analogThreshold->inPlay) {
-    if (abs((analogVoltage - analogThreshold->threshold)) > analogThreshold->play) {
-      analogThreshold->inPlay = false;
-    }
-  }
-
-  if (analogThreshold->lastVoltage == -1) {
-    analogThreshold->lastVoltage = analogVoltage;
-  } else if (!analogThreshold->inPlay) {
-    if ((analogThreshold->lastVoltage >= analogThreshold->threshold && analogVoltage < analogThreshold->threshold) ||
-      (analogThreshold->lastVoltage < analogThreshold->threshold && analogVoltage >= analogThreshold->threshold)) {
-      analogThreshold->inPlay = true;
-    }
-    
-    analogThreshold->lastVoltage = analogVoltage;
+void hysteresisCheck(AnalogHysteresis* analogHysteresis, float analogVoltage) {
+  if (analogHysteresis->offValue >= analogVoltage) {
+    analogHysteresis->isOn = false;
+  } else if (analogHysteresis->onValue <= analogVoltage) {
+    analogHysteresis->isOn = true;
   }
 }
 
