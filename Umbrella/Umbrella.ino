@@ -9,7 +9,7 @@ const float batteryLimit2OnValue = 3.0;
 const float dayVoltage = 2.8; // If the day/night sensor reads this value or more, the system behaves for day time.
 const float nightVoltage= 2.5; // If the day/night sensor reads this value or less, the system behaves for night time.
 // Constants for opening and closing the umbrella
-const float openingAmpLimit = 10.0; // the nnA for the opening current limit
+const float openingAmpLimit = 9.7; // the nnA for the opening current limit
 const float closingAmpLimit = 2.5; // the nnA for the closing current limit
 const long closedDebounceDuration = 1000; // The time in milliseconds that the motor reverses for after it finishes opening.
 const long closedDebouncePauseDuration = 500; // The time in milliseconds that the system waits before reversing, after opening.
@@ -29,6 +29,9 @@ AnalogHysteresis batteryVoltageLimit2 = {batteryLimit2OffValue, batteryLimit2OnV
 AnalogHysteresis dayNightVoltageThreshold = {nightVoltage, dayVoltage, true}; // The Day/Night threshold. If the voltage from the light sensor is above this, it is considered day.
 
 const float voltageLimit = 3.3; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
+const float motorVoltageMinimum = 2.36; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
+const float motorVoltageVariance = voltageLimit - motorVoltageMinimum;
+const float motorCurrentMaximum = 10.0; // The maximum amount of amps that the motor can exert.
 
 // Battery and USB constants
 const int batteryAnalogInPin = A2;  // Analog input pin that the potentiometer is attached to
@@ -39,8 +42,8 @@ const int upDownButtonPin = 2;     // the number of the upDownButton pin
 const int currentAnalogInPin = A1;  // Analog input pin that the potentiometer is attached to
 const int openingLedOutPin = 6; // Digital output pin that the LED is attached to
 const int closingLedOutPin = 7; // Digital output pin that the LED is attached to
-const float openingVoltThreshold = (0.5 + (openingAmpLimit * 0.13)); // the voltage for the opening current limit
-const float closingVoltThreshold = (0.5 + (closingAmpLimit * 0.13)); // the voltage for the closing current limit
+const float openingVoltThreshold = ((openingAmpLimit / motorCurrentMaximum) * motorVoltageVariance); // the voltage for the opening current limit
+const float closingVoltThreshold = ((closingAmpLimit / motorCurrentMaximum) * motorVoltageVariance); // the voltage for the closing current limit
 // Opening and closing state constants
 const int OPEN = 0;
 const int OPENING = 1;
@@ -195,8 +198,8 @@ void loop() {
   if (millis() > (currentMonitorDelayStartTime + currentMonitorDelay) && (upDownState == OPENING || upDownState == CLOSING)) {
     currentValue = analogRead(currentAnalogInPin);
     // Convert the raw data value (0 - 1023) to voltage (0.0V - voltageLimitV):
-    float currentVoltage = currentValue * (voltageLimit / 1024.0);
-
+    float currentVoltage = (currentValue * (voltageLimit / 1024.0)) - motorVoltageMinimum;
+    
     if (upDownState == OPENING) {
       if (currentVoltage >= openingVoltThreshold) {
         upDownState = OPEN;
