@@ -101,7 +101,7 @@ void setup() {
   // Configure the initial umbrella state, reading from the EEPROM and setting it to closed if an invalid value is read.
   upDownState = EEPROM.read(stateAddress);
 
-  if (upDownState < 0 || upDownState > MANUAL_OPEN) {
+  if (upDownState < 0 || upDownState > CLOSED_DEBOUNCE_PAUSE) {
     upDownState = CLOSED;
   } else if (upDownState == CLOSED_DEBOUNCE || upDownState == CLOSED_DEBOUNCE_PAUSE) {
     upDownState = CLOSED_DEBOUNCE;
