@@ -13,6 +13,7 @@ const float openingAmpLimit = 9.7; // the nnA for the opening current limit
 const float closingAmpLimit = 2.5; // the nnA for the closing current limit
 const long closedDebounceDuration = 1000; // The time in milliseconds that the motor reverses for after it finishes opening.
 const long closedDebouncePauseDuration = 500; // The time in milliseconds that the system waits before reversing, after opening.
+const long motorResistorDuration = 500; // Duration the resistor runs for while the motor is starting up.
 
 // Hysteresis struct to manage the various thresholds
 struct AnalogHysteresis {
@@ -38,6 +39,7 @@ const int batteryAnalogInPin = A2;  // Analog input pin that the potentiometer i
 const int usbChargerLedOutPin = 11; // Digital output pin that the USB LED is attached to
 
 // Opening and Closing constants and variables
+const int motorResistorPin = 9;
 const int upDownButtonPin = 2;     // the number of the upDownButton pin
 const int currentAnalogInPin = A1;  // Analog input pin that the potentiometer is attached to
 const int openingLedOutPin = 6; // Digital output pin that the LED is attached to
@@ -61,6 +63,7 @@ long closedDebounceRunTime = 0;
 long closedDebouncePauseRunTime = 0;
 unsigned long debounceDelay = 200; // the button debounce time, in milliseconds
 unsigned long currentMonitorDelay = 500; // Current monitor delay for opening and closing, in milliseconds
+long motorResistorRunTime = -motorResistorDuration;
 
 // Lights Pins
 const int dayNightAnalog = A0;     // the number of the Day/Night pin
@@ -92,9 +95,11 @@ void setup() {
   pinMode(openingLedOutPin, OUTPUT);
   pinMode(closingLedOutPin, OUTPUT);
   pinMode(upDownButtonPin, INPUT);
+  pinMode(motorResistorPin, OUTPUT);
   // set opening and closing states
   digitalWrite(openingLedOutPin, LOW);
   digitalWrite(closingLedOutPin, LOW);
+  digitalWrite(motorResistorPin, LOW);
 
   // initialize the usb output pin
   pinMode(usbChargerLedOutPin, OUTPUT);
@@ -114,6 +119,9 @@ void setup() {
 }
 
 void loop() {
+
+  // Get the millis time for this loop.
+  const long loopMillis = millis();
 
   // BATTERY MONITOR
   // read the analog in value:
@@ -141,12 +149,12 @@ void loop() {
   // read the state of the light switch into a local variable:
   int lightSwitchRead = digitalRead(lightButtonPin);
 
-  if (lightSwitchRead != lastLightButtonState && (millis() - lastLightDebounceTime) > debounceDelay) {
+  if (lightSwitchRead != lastLightButtonState && (loopMillis - lastLightDebounceTime) > debounceDelay) {
     lightButtonState = lightSwitchRead;
 
     // LOW to trigger on release, HIGH to trigger on press
     if (lightButtonState == LOW) {
-      lastLightDebounceTime = millis();
+      lastLightDebounceTime = loopMillis;
       
       lightState = !lightState;
     }
@@ -159,18 +167,19 @@ void loop() {
   // OPENING AND CLOSING UMBRELLA
   int upDownReading = digitalRead(upDownButtonPin);
 
-  if ((upDownState != CLOSED_DEBOUNCE && upDownState != CLOSED_DEBOUNCE_PAUSE) && upDownReading != lastUpDownButtonState && (millis() - lastUmbrellaDebounceTime) > debounceDelay) {
+  if ((upDownState != CLOSED_DEBOUNCE && upDownState != CLOSED_DEBOUNCE_PAUSE) && upDownReading != lastUpDownButtonState && (loopMillis - lastUmbrellaDebounceTime) > debounceDelay) {
     upDownButtonState = upDownReading;
 
     // LOW to trigger on release, HIGH to trigger on press
     if (upDownButtonState == HIGH) {
-      lastUmbrellaDebounceTime = millis();
-      currentMonitorDelayStartTime = millis();
+      lastUmbrellaDebounceTime = loopMillis;
+      currentMonitorDelayStartTime = loopMillis;
 
       switch (upDownState) {
         case OPEN:
         case MANUAL_OPEN:
           upDownState = CLOSING;
+          motorResistorRunTime = loopMillis;
           break;
         case OPENING:
           upDownState = MANUAL_OPEN;
@@ -178,6 +187,7 @@ void loop() {
         case CLOSED:
           // This depends on the battery level. If its too low, it must only close.
           upDownState = !batteryVoltageLimit2.isOn ? CLOSING : OPENING;
+          motorResistorRunTime = loopMillis;
           break;
         case CLOSING:
           upDownState = CLOSED;
@@ -195,7 +205,7 @@ void loop() {
   }
 
   // Handle opening and closing based on state, after the current monitor delay period
-  if (millis() > (currentMonitorDelayStartTime + currentMonitorDelay) && (upDownState == OPENING || upDownState == CLOSING)) {
+  if (loopMillis > (currentMonitorDelayStartTime + currentMonitorDelay) && (upDownState == OPENING || upDownState == CLOSING)) {
     currentValue = analogRead(currentAnalogInPin);
     // Convert the raw data value (0 - 1023) to voltage (0.0V - voltageLimitV):
     float currentVoltage = (currentValue * (voltageLimit / 1024.0)) - motorVoltageMinimum;
@@ -208,22 +218,25 @@ void loop() {
       if (currentVoltage >= closingVoltThreshold) {
         // Initialise the debounce to relieve stress on the closing spring.
         upDownState = CLOSED_DEBOUNCE_PAUSE;
-        closedDebouncePauseRunTime = millis();
+        closedDebouncePauseRunTime = loopMillis;
       }
     }
-  } else if (upDownState == CLOSED_DEBOUNCE && millis() - closedDebounceRunTime > closedDebounceDuration) {
+  } else if (upDownState == CLOSED_DEBOUNCE && loopMillis - closedDebounceRunTime > closedDebounceDuration) {
     // If the debounce has run its course, set the state to closed
     upDownState = CLOSED;
-  } else if (upDownState == CLOSED_DEBOUNCE_PAUSE && millis() - closedDebouncePauseRunTime > closedDebouncePauseDuration) {
+  } else if (upDownState == CLOSED_DEBOUNCE_PAUSE && loopMillis - closedDebouncePauseRunTime > closedDebouncePauseDuration) {
     // If the debounce has run its course, set the state to closed
     upDownState = CLOSED_DEBOUNCE;
-    closedDebounceRunTime = millis();
+    closedDebounceRunTime = loopMillis;
   }
   
   // If the upbrella state isnt open, turn off the lights
   if (upDownState != OPEN) {
     lightState = LOW;
   }
+
+  // Set the resistor state
+  digitalWrite(motorResistorPin, loopMillis - motorResistorRunTime < motorResistorDuration);
 
   // Set the light state
   digitalWrite(lightsOutPin, !batteryVoltageLimit2.isOn ? LOW : (isDay ? LOW : lightState));
