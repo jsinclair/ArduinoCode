@@ -92,6 +92,9 @@ int currentValue = 0;        // value read from the current monitor analog
 int stateAddress = 0;
 
 void setup() {
+  // Get the millis time for the setup.
+  const long setupMillis = millis();
+  
   // initialize lights pins
   pinMode(lightButtonPin, INPUT);
   pinMode(lightsOutPin, OUTPUT);
@@ -123,10 +126,10 @@ void setup() {
   } else if (upDownState == CLOSED_DEBOUNCE || upDownState == CLOSED_DEBOUNCE_PAUSE) {
     upDownState = CLOSED_DEBOUNCE;
     // Run the closed debounce if the umbrella was busy with it when it turned off.
-    closedDebounceRunTime = millis();
+    closedDebounceRunTime = setupMillis;
   }
 
-  remoteReceiverStateDuration = millis();
+  remoteReceiverStateDuration = setupMillis;
 }
 
 void loop() {
