@@ -30,7 +30,7 @@ AnalogHysteresis batteryVoltageLimit2 = {batteryLimit2OffValue, batteryLimit2OnV
 AnalogHysteresis dayNightVoltageThreshold = {nightVoltage, dayVoltage, true}; // The Day/Night threshold. If the voltage from the light sensor is above this, it is considered day.
 
 const float voltageLimit = 3.3; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
-const float motorVoltageMinimum = 2.36; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
+const float motorVoltageMinimum = 1.9; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 1.9 volts.
 const float motorVoltageVariance = voltageLimit - motorVoltageMinimum;
 const float motorCurrentMaximum = 10.0; // The maximum amount of amps that the motor can exert.
 
