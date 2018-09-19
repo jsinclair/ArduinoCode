@@ -9,11 +9,13 @@ const float batteryLimit2OnValue = 3.0;
 const float dayVoltage = 2.8; // If the day/night sensor reads this value or more, the system behaves for day time.
 const float nightVoltage= 2.5; // If the day/night sensor reads this value or less, the system behaves for night time.
 // Constants for opening and closing the umbrella
-const float openingAmpLimit = 9.7; // the nnA for the opening current limit
-const float closingAmpLimit = 2.5; // the nnA for the closing current limit
+const float openingAmpLimit = 9.0; // the nnA for the opening current limit
+const float closingAmpLimit = 3.0; // the nnA for the closing current limit
 const long closedDebounceDuration = 1000; // The time in milliseconds that the motor reverses for after it finishes opening.
 const long closedDebouncePauseDuration = 500; // The time in milliseconds that the system waits before reversing, after opening.
 const long motorResistorDuration = 500; // Duration the resistor runs for while the motor is starting up.
+const long remoteReceiverOnDuration = 1500; // How long in milliseconds the remote receiver stays on for in a cycle.
+const long remoteReceiverOffDuration = 5000; // How long in milliseconds the remote receiver stays off for in a cycle.
 
 // Hysteresis struct to manage the various thresholds
 struct AnalogHysteresis {
@@ -79,6 +81,11 @@ unsigned long lastUmbrellaDebounceTime = 0;  // the last time the output pin was
 unsigned long lastLightDebounceTime = 0;  // the last time the light button was pressed
 unsigned long currentMonitorDelayStartTime = 0; // The start time of a current monitor delay
 
+// Remote receiver cycle variables.
+int remoteReceiverState = HIGH;
+long remoteReceiverStateDuration = 0;
+const int remoteReceiverPin = 10;      // output pin for the remote receiver state
+
 int batteryValue = 0;        // value read from the battery analog
 int currentValue = 0;        // value read from the current monitor analog
 
@@ -96,10 +103,12 @@ void setup() {
   pinMode(closingLedOutPin, OUTPUT);
   pinMode(upDownButtonPin, INPUT);
   pinMode(motorResistorPin, OUTPUT);
+  pinMode(remoteReceiverPin, OUTPUT);
   // set opening and closing states
   digitalWrite(openingLedOutPin, LOW);
   digitalWrite(closingLedOutPin, LOW);
   digitalWrite(motorResistorPin, LOW);
+  digitalWrite(remoteReceiverPin, remoteReceiverState);
 
   // initialize the usb output pin
   pinMode(usbChargerLedOutPin, OUTPUT);
@@ -116,6 +125,8 @@ void setup() {
     // Run the closed debounce if the umbrella was busy with it when it turned off.
     closedDebounceRunTime = millis();
   }
+
+  remoteReceiverStateDuration = millis();
 }
 
 void loop() {
@@ -235,6 +246,15 @@ void loop() {
     lightState = LOW;
   }
 
+  // Work out the remote receiver state
+  if (remoteReceiverState && (remoteReceiverStateDuration + remoteReceiverOnDuration < loopMillis)) {
+    remoteReceiverState = LOW;
+    remoteReceiverStateDuration = loopMillis;
+  } else if (!remoteReceiverState && (remoteReceiverStateDuration + remoteReceiverOffDuration < loopMillis)) {
+    remoteReceiverState = HIGH;
+    remoteReceiverStateDuration = loopMillis;
+  }
+
   // Set the resistor state
   digitalWrite(motorResistorPin, loopMillis - motorResistorRunTime < motorResistorDuration);
 
@@ -244,6 +264,9 @@ void loop() {
   // set opening and closing the LEDs:
   digitalWrite(openingLedOutPin, (upDownState == OPENING || upDownState == CLOSED_DEBOUNCE));
   digitalWrite(closingLedOutPin, upDownState == CLOSING);
+
+  // set the remote receiver state
+  digitalWrite(remoteReceiverPin, remoteReceiverState);
 
   // Save the umbrella state
   EEPROM.update(stateAddress, upDownState);
