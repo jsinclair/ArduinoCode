@@ -9,8 +9,10 @@ const float batteryLimit2OnValue = 3.0;
 const float dayVoltage = 2.8; // If the day/night sensor reads this value or more, the system behaves for day time.
 const float nightVoltage= 2.5; // If the day/night sensor reads this value or less, the system behaves for night time.
 // Constants for opening and closing the umbrella
-const float openingAmpLimit = 9.0; // the nnA for the opening current limit
-const float closingAmpLimit = 3.0; // the nnA for the closing current limit
+float openingAmpLimit = 6.0; // the nnA for the opening current limit. Allowable range: 0.0 - 7.0
+float openingWattLimit = 60.0; // the watts for the opening limit. Allowable range: 0.0 - 80.0
+float closingAmpLimit = 3.0; // the nnA for the closing current limit. Allowable range: 0.0 - 3.5
+float closingWattLimit = 30.0; // the watts for the opening limit. Allowable range: 0.0 - 40.0
 const long closedDebounceDuration = 1000; // The time in milliseconds that the motor reverses for after it finishes opening.
 const long closedDebouncePauseDuration = 500; // The time in milliseconds that the system waits before reversing, after opening.
 const long motorResistorDuration = 500; // Duration the resistor runs for while the motor is starting up.
@@ -46,8 +48,6 @@ const int upDownButtonPin = 2;     // the number of the upDownButton pin
 const int currentAnalogInPin = A1;  // Analog input pin that the potentiometer is attached to
 const int openingLedOutPin = 6; // Digital output pin that the LED is attached to
 const int closingLedOutPin = 7; // Digital output pin that the LED is attached to
-const float openingVoltThreshold = ((openingAmpLimit / motorCurrentMaximum) * motorVoltageVariance); // the voltage for the opening current limit
-const float closingVoltThreshold = ((closingAmpLimit / motorCurrentMaximum) * motorVoltageVariance); // the voltage for the closing current limit
 // Opening and closing state constants
 const int OPEN = 0;
 const int OPENING = 1;
@@ -88,6 +88,10 @@ const int remoteReceiverPin = 10;      // output pin for the remote receiver sta
 
 int batteryValue = 0;        // value read from the battery analog
 int currentValue = 0;        // value read from the current monitor analog
+
+// Watts holders and constants
+const float batteryVoltageCoefficient = 3.81;
+const float motorAmpsCoefficient = 7.143;
 
 int stateAddress = 0;
 
@@ -130,6 +134,12 @@ void setup() {
   }
 
   remoteReceiverStateDuration = setupMillis;
+
+  // Check that the opening and closing amps and watts are withing the allowable ranges.
+  openingAmpLimit = openingAmpLimit < 0.0 ? 0.0 : openingAmpLimit > 7.0 ? 7.0 : openingAmpLimit;
+  openingWattLimit = openingWattLimit < 0.0 ? 0.0 : openingWattLimit > 60.0 ? 60.0 : openingWattLimit;
+  closingAmpLimit = closingAmpLimit < 0.0 ? 0.0 : closingAmpLimit > 3.5 ? 3.5 : closingAmpLimit;
+  closingWattLimit = closingWattLimit < 0.0 ? 0.0 : closingWattLimit > 40.0 ? 40.0 : closingWattLimit;
 }
 
 void loop() {
@@ -224,12 +234,16 @@ void loop() {
     // Convert the raw data value (0 - 1023) to voltage (0.0V - voltageLimitV):
     float currentVoltage = (currentValue * (voltageLimit / 1024.0)) - motorVoltageMinimum;
     
+    const float currentAmps = currentVoltage * motorAmpsCoefficient;
+    const float actualBatteryVoltage = batteryVoltage * batteryVoltageCoefficient;
+    const float currentWatts = actualBatteryVoltage * currentAmps;
+    
     if (upDownState == OPENING) {
-      if (currentVoltage >= openingVoltThreshold) {
+      if (currentWatts >= openingWattLimit || currentAmps >= openingAmpLimit) {
         upDownState = OPEN;
       }
     } else if (upDownState == CLOSING) {
-      if (currentVoltage >= closingVoltThreshold) {
+      if (currentWatts >= closingWattLimit || currentAmps >= closingAmpLimit) {
         // Initialise the debounce to relieve stress on the closing spring.
         upDownState = CLOSED_DEBOUNCE_PAUSE;
         closedDebouncePauseRunTime = loopMillis;
