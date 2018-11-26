@@ -34,7 +34,7 @@ AnalogHysteresis batteryVoltageLimit2 = {batteryLimit2OffValue, batteryLimit2OnV
 AnalogHysteresis dayNightVoltageThreshold = {nightVoltage, dayVoltage, true}; // The Day/Night threshold. If the voltage from the light sensor is above this, it is considered day.
 
 const float voltageLimit = 3.3; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
-const float motorVoltageMinimum = 1.9; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 1.9 volts.
+const float motorVoltageMinimum = 2.5; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
 const float motorVoltageVariance = voltageLimit - motorVoltageMinimum;
 const float motorCurrentMaximum = 10.0; // The maximum amount of amps that the motor can exert.
 
@@ -91,7 +91,7 @@ int currentValue = 0;        // value read from the current monitor analog
 
 // Watts holders and constants
 const float batteryVoltageCoefficient = 3.81;
-const float motorAmpsCoefficient = 7.143;
+const float motorAmpsCoefficient = 10;
 
 int stateAddress = 0;
 
@@ -231,9 +231,9 @@ void loop() {
   // Handle opening and closing based on state, after the current monitor delay period
   if (loopMillis > (currentMonitorDelayStartTime + currentMonitorDelay) && (upDownState == OPENING || upDownState == CLOSING)) {
     currentValue = analogRead(currentAnalogInPin);
-    // Convert the raw data value (0 - 1023) to voltage (0.0V - voltageLimitV):
-    float currentVoltage = (currentValue * (voltageLimit / 1024.0)) - motorVoltageMinimum;
-    
+    // Convert the raw data value (0 - 1023) to voltage (voltageLimitV - motorVoltageMinimumV):
+    float currentVoltage = (currentValue * (motorVoltageVariance / 1024.0));
+
     const float currentAmps = currentVoltage * motorAmpsCoefficient;
     const float actualBatteryVoltage = batteryVoltage * batteryVoltageCoefficient;
     const float currentWatts = actualBatteryVoltage * currentAmps;
