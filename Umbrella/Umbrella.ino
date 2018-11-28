@@ -232,9 +232,9 @@ void loop() {
   if (loopMillis > (currentMonitorDelayStartTime + currentMonitorDelay) && (upDownState == OPENING || upDownState == CLOSING)) {
     currentValue = analogRead(currentAnalogInPin);
     // Convert the raw data value (0 - 1023) to voltage (voltageLimitV - motorVoltageMinimumV):
-    float currentVoltage = (currentValue * (motorVoltageVariance / 1024.0));
+    float currentVoltage = analogToVoltage(currentValue);
 
-    const float currentAmps = currentVoltage * motorAmpsCoefficient;
+    const float currentAmps = (currentVoltage - motorVoltageMinimum) * motorAmpsCoefficient;
     const float actualBatteryVoltage = batteryVoltage * batteryVoltageCoefficient;
     const float currentWatts = actualBatteryVoltage * currentAmps;
     
