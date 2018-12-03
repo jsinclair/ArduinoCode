@@ -10,9 +10,7 @@ const float dayVoltage = 2.8; // If the day/night sensor reads this value or mor
 const float nightVoltage= 2.5; // If the day/night sensor reads this value or less, the system behaves for night time.
 // Constants for opening and closing the umbrella
 float openingAmpLimit = 6.0; // the nnA for the opening current limit. Allowable range: 0.0 - 7.0
-float openingWattLimit = 60.0; // the watts for the opening limit. Allowable range: 0.0 - 80.0
 float closingAmpLimit = 3.0; // the nnA for the closing current limit. Allowable range: 0.0 - 3.5
-float closingWattLimit = 30.0; // the watts for the opening limit. Allowable range: 0.0 - 40.0
 const long closedDebounceDuration = 1000; // The time in milliseconds that the motor reverses for after it finishes opening.
 const long closedDebouncePauseDuration = 500; // The time in milliseconds that the system waits before reversing, after opening.
 const long motorResistorDuration = 500; // Duration the resistor runs for while the motor is starting up.
@@ -135,11 +133,9 @@ void setup() {
 
   remoteReceiverStateDuration = setupMillis;
 
-  // Check that the opening and closing amps and watts are withing the allowable ranges.
+  // Check that the opening and closing amps are within the allowable ranges.
   openingAmpLimit = openingAmpLimit < 0.0 ? 0.0 : openingAmpLimit > 7.0 ? 7.0 : openingAmpLimit;
-  openingWattLimit = openingWattLimit < 0.0 ? 0.0 : openingWattLimit > 60.0 ? 60.0 : openingWattLimit;
   closingAmpLimit = closingAmpLimit < 0.0 ? 0.0 : closingAmpLimit > 3.5 ? 3.5 : closingAmpLimit;
-  closingWattLimit = closingWattLimit < 0.0 ? 0.0 : closingWattLimit > 40.0 ? 40.0 : closingWattLimit;
 }
 
 void loop() {
@@ -236,14 +232,13 @@ void loop() {
 
     const float currentAmps = currentVoltage * motorAmpsCoefficient;
     const float actualBatteryVoltage = batteryVoltage * batteryVoltageCoefficient;
-    const float currentWatts = actualBatteryVoltage * currentAmps;
     
     if (upDownState == OPENING) {
-      if (currentWatts >= openingWattLimit || currentAmps >= openingAmpLimit) {
+      if (currentAmps >= openingAmpLimit) {
         upDownState = OPEN;
       }
     } else if (upDownState == CLOSING) {
-      if (currentWatts >= closingWattLimit || currentAmps >= closingAmpLimit) {
+      if (currentAmps >= closingAmpLimit) {
         // Initialise the debounce to relieve stress on the closing spring.
         upDownState = CLOSED_DEBOUNCE_PAUSE;
         closedDebouncePauseRunTime = loopMillis;
