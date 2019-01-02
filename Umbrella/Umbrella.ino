@@ -161,9 +161,11 @@ void loop() {
     lightState = LOW;
   }
 
-  // Handle USB Charger
-  hysteresisCheck(&batteryVoltageLimit1, batteryVoltage);
-  digitalWrite(usbChargerLedOutPin, batteryVoltageLimit1.isOn);
+  // Handle USB Charger, if the umbrella isnt opening or closing.
+  if (upDownState != OPENING && upDownState != CLOSING) {
+    hysteresisCheck(&batteryVoltageLimit1, batteryVoltage);
+    digitalWrite(usbChargerLedOutPin, batteryVoltageLimit1.isOn);
+  }
 
   // Handle Lights
   // read the state of the light switch into a local variable:
@@ -218,12 +220,6 @@ void loop() {
 
   lastUpDownButtonState = upDownReading;
 
-  // Adjust state based on battery level
-  if (!batteryVoltageLimit2.isOn && (upDownState == OPENING)) {
-    // Setting the state to OPEN will make it only update to CLOSING on a button press, which is the limitation when the battery is low.
-    upDownState = OPEN;
-  }
-
   // Handle opening and closing based on state, after the current monitor delay period
   if (loopMillis > (currentMonitorDelayStartTime + currentMonitorDelay) && (upDownState == OPENING || upDownState == CLOSING)) {
     currentValue = analogRead(currentAnalogInPin);
@@ -231,7 +227,6 @@ void loop() {
     float currentVoltage = analogToVoltage(currentValue);
 
     const float currentAmps = (currentVoltage - motorVoltageMinimum) * motorAmpsCoefficient;
-    const float actualBatteryVoltage = batteryVoltage * batteryVoltageCoefficient;
     
     if (upDownState == OPENING) {
       if (currentAmps >= openingAmpLimit) {
@@ -270,8 +265,10 @@ void loop() {
   // Set the resistor state
   digitalWrite(motorResistorPin, loopMillis - motorResistorRunTime < motorResistorDuration);
 
-  // Set the light state
-  digitalWrite(lightsOutPin, !batteryVoltageLimit2.isOn ? LOW : (isDay ? LOW : lightState));
+  // Set the light state, if the umbrella isnt opening or closing
+  if (upDownState != OPENING && upDownState != CLOSING) {
+    digitalWrite(lightsOutPin, !batteryVoltageLimit2.isOn ? LOW : (isDay ? LOW : lightState));
+  }
 
   // set opening and closing the LEDs:
   digitalWrite(openingLedOutPin, (upDownState == OPENING || upDownState == CLOSED_DEBOUNCE));
