@@ -166,10 +166,8 @@ void loop() {
   }
 
   // Handle USB Charger
-  if (upDownState != OPENING && upDownState != CLOSING) {
-    hysteresisCheck(&batteryVoltageLimit1, batteryVoltage);
-    digitalWrite(usbChargerLedOutPin, batteryVoltageLimit1.isOn);
-  }
+  hysteresisCheck(&batteryVoltageLimit1, batteryVoltage);
+  digitalWrite(usbChargerLedOutPin, upDownState == OPEN ? batteryVoltageLimit1.isOn : LOW);
 
   // Handle Lights
   // read the state of the light switch into a local variable:
@@ -212,7 +210,7 @@ void loop() {
           break;
         case CLOSED:
           // This depends on the battery level. If its too low, it must only close.
-          upDownState = !batteryVoltageLimit2.isOn ? CLOSING : OPENING;
+          upDownState = !batteryVoltageLimit2.isOn ? CLOSED : OPENING;
           motorResistorRunTime = loopMillis;
           break;
         case CLOSING:
@@ -253,7 +251,7 @@ void loop() {
     upDownState = CLOSED_DEBOUNCE;
     closedDebounceRunTime = loopMillis;
   }
-  
+
   // If the upbrella state isnt open, turn off the lights
   if (upDownState != OPEN) {
     lightState = LOW;
@@ -272,9 +270,7 @@ void loop() {
   digitalWrite(motorResistorPin, loopMillis - motorResistorRunTime < motorResistorDuration);
 
   // Set the light state
-  if (upDownState != OPENING && upDownState != CLOSING) {
-    digitalWrite(lightsOutPin, !batteryVoltageLimit2.isOn ? LOW : (isDay ? LOW : lightState));
-  }
+  digitalWrite(lightsOutPin, !batteryVoltageLimit2.isOn ? LOW : (isDay ? LOW : lightState));
 
   // set opening and closing the LEDs:
   digitalWrite(openingLedOutPin, (upDownState == OPENING || upDownState == CLOSED_DEBOUNCE));
