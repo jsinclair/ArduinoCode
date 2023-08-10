@@ -25,9 +25,9 @@ void hysteresisCheck(AnalogHysteresis* analogHysteresis, float analogVoltage);
 AnalogHysteresis batteryVoltageLimit = {batteryLimitOffValue, batteryLimitOnValue, true}; // The limit for the battery, disables light and limits umbrella to closing when battery level is lower than this
 
 // Motor consts and vars
-const int motorButtonPin = 3;		// the number of the motorButton pin
-const int motorUpPin = 9;			// Output pin for up motor
-const int motorDownPin = 10;		// Output pin for down motor
+const int motorButtonPin = 3;		// the number of the motor button pin
+const int motorUpPin = 7;			// Output pin for up motor
+const int motorDownPin = 8;		// Output pin for down motor
 
 // Up/Down states
 const int OPENING = 0;
@@ -44,8 +44,8 @@ unsigned long lastMotorDebounceTime = 0;  // the last time the output pin was to
 unsigned long currentMonitorDelayStartTime = 0; // The start time of a current monitor delay
 
 // Light consts and vars
-const int lightButtonPin = 2;     	// Light button in pin
-const int lightOutPin = 8;			// Light out pin
+const int lightButtonPin = 4;     	// Light button in pin
+const int lightOutPin = 6;			// Light out pin
 
 int lastLightButtonState = LOW;
 int lightButtonState;
@@ -53,7 +53,7 @@ int lightState = LOW;
 unsigned long lastLightDebounceTime = 0;  // the last time the output pin was toggled
 
 // Battery consts and vars
-const int batteryInPin = A0;     	// Light button in pin
+const int batteryInPin = A2;     	// Light button in pin
 
 // Motor current consts and vars
 const int motorCurrentPin = A1;
@@ -114,9 +114,6 @@ void loop()
   // Check the battery level
   hysteresisCheck(&batteryVoltageLimit, batteryVoltage);
 //  Serial.println(batteryVoltage);
-  
-  // Read battery voltage
-  //Serial.println(analogRead(batteryInPin));
   
   // Handle lights input
   int lightReading = digitalRead(lightButtonPin);
