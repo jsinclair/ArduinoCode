@@ -1,5 +1,6 @@
 Implement sleep mode
 Pulse Count/potential other implementation for determining open/close state
+Compensate for millis reset on long run for various timers
 DONE - De-bounce on manual switch for lights + open/close
 
 DONE - Remove close position calculation based on current sensor

@@ -1,4 +1,5 @@
 #include <EEPROM.h>
+#include <LowPower.h>
 
 // Float constants for battery thresholds. All values in volts.
 const float batteryLimitOffValue = 2.6; // Battery threshold, turns off lights and only allows the umbrella to close when its off.
@@ -26,8 +27,8 @@ AnalogHysteresis batteryVoltageLimit = {batteryLimitOffValue, batteryLimitOnValu
 
 // Motor consts and vars
 const int motorButtonPin = 3;		// the number of the motor button pin
-const int motorUpPin = 7;			// Output pin for up motor
-const int motorDownPin = 8;		// Output pin for down motor
+const int motorUpPin = 6;			// Output pin for up motor
+const int motorDownPin = 7;		// Output pin for down motor
 
 // Up/Down states
 const int OPENING = 0;
@@ -44,8 +45,8 @@ unsigned long lastMotorDebounceTime = 0;  // the last time the output pin was to
 unsigned long currentMonitorDelayStartTime = 0; // The start time of a current monitor delay
 
 // Light consts and vars
-const int lightButtonPin = 4;     	// Light button in pin
-const int lightOutPin = 6;			// Light out pin
+const int lightButtonPin = 2;     	// Light button in pin
+const int lightOutPin = 8;			// Light out pin
 
 int lastLightButtonState = LOW;
 int lightButtonState;
@@ -60,14 +61,13 @@ const int motorCurrentPin = A1;
 
 // Remote consts and vars
 int remoteReceiverState = HIGH;
-long remoteReceiverStateDuration = 0;
-const int remoteReceiverPin = 11;
+long remoteReceiverStateSetTime = 0;
+const int remoteReceiverPin = 10;
 
 // Other consts and vars
 unsigned long debounceDelay = 50;    // the debounce time
 
-void setup()
-{
+void setup() {
   pinMode(lightButtonPin, INPUT);
   pinMode(lightOutPin, OUTPUT);
   
@@ -86,7 +86,7 @@ void setup()
   digitalWrite(motorDownPin, LOW);
   digitalWrite(remoteReceiverPin, remoteReceiverState);
   
- // Serial.begin(9600);
+  //Serial.begin(9600);
   
   // Configure the initial umbrella state, reading from the EEPROM.
   motorState = EEPROM.read(motorStateAddress);
@@ -100,10 +100,18 @@ void setup()
   
   // Check that the opening and closing amps are within the allowable ranges.
   openingAmpLimit = openingAmpLimit < 0.0 ? 0.0 : openingAmpLimit > 7.0 ? 7.0 : openingAmpLimit;
+
+  // set the interrupt func to the button pins
+  attachInterrupt(digitalPinToInterrupt(motorButtonPin), wakeUp, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(lightButtonPin), wakeUp, CHANGE);
 }
 
-void loop()
-{
+void loop() {
+  // This tracks whether or not to sleep at the end of the loop of not.
+  // If the umbrella is opening or closing, stay awake. If we are in a debounce timer, stay awake.
+  // Then if we still need to sleep, calculate sleep time based on remaining remote change time.
+  bool shouldSleep = true;
+
   // Get the millis time for this loop.
   const long loopMillis = millis();
   
@@ -136,6 +144,9 @@ void loop()
         lightState = !lightState;
       }
     }
+  } else {
+    // If we are in a debounce period, dont sleep
+    shouldSleep = false;
   }
   
   // If the battery is too low, just always turn the lights off
@@ -166,7 +177,7 @@ void loop()
       if (motorButtonState == HIGH) {
         currentMonitorDelayStartTime = loopMillis;
         
-		switch (motorState) {
+		    switch (motorState) {
           case OPENING:
           motorState = OPEN_PARTIAL;
           break;
@@ -183,6 +194,9 @@ void loop()
         }
       }
     }
+  } else {
+    // If we are in a debounce period, dont sleep  
+    shouldSleep = false;
   }
   
   // save the reading. Next time through the loop, it'll be the lastButtonState:
@@ -199,18 +213,22 @@ void loop()
       }
     }
   }
+
+  if (motorState == OPENING || motorState == CLOSING) {
+    shouldSleep = false;
+  }
   
   if (motorState != OPEN) {
     lightState = LOW;
   }
   
   // Work out the remote receiver state
-  if (remoteReceiverState && (remoteReceiverStateDuration + remoteReceiverOnDuration < loopMillis)) {
+  if (remoteReceiverState && (remoteReceiverStateSetTime + remoteReceiverOnDuration < loopMillis)) {
     remoteReceiverState = LOW;
-    remoteReceiverStateDuration = loopMillis;
-  } else if (!remoteReceiverState && (remoteReceiverStateDuration + remoteReceiverOffDuration < loopMillis)) {
+    remoteReceiverStateSetTime = loopMillis;
+  } else if (!remoteReceiverState && (remoteReceiverStateSetTime + remoteReceiverOffDuration < loopMillis)) {
     remoteReceiverState = HIGH;
-    remoteReceiverStateDuration = loopMillis;
+    remoteReceiverStateSetTime = loopMillis;
   }
   
   // OUTPUTS
@@ -241,6 +259,57 @@ void loop()
   
   // Save the umbrella state
   EEPROM.update(motorStateAddress, motorState);
+
+  if (shouldSleep) {
+    // If we should still sleep at this point, calculate for how long and go for it.
+    // Duration is based on possible durations and remote timer remaining
+    long remoteTimeRemaining = 0;
+    if (remoteReceiverState) {
+      remoteTimeRemaining = (remoteReceiverStateSetTime + remoteReceiverOnDuration) - loopMillis;
+    } else if (!remoteReceiverState) {
+      remoteTimeRemaining = (remoteReceiverStateSetTime + remoteReceiverOffDuration) - loopMillis;
+    }
+
+    // Minimum sleep time is 15ms, so dont sleep if there is less than that amount of time before the remote change
+    if (remoteTimeRemaining >= 15) {
+      LowPower.powerDown(getSleepDuration(remoteTimeRemaining), ADC_OFF, BOD_OFF);
+    }
+  }
+}
+
+period_t getSleepDuration(long remoteTimeRemaining) {
+  // While sleeping, the millis() funciton doesnt increment. So we need to adjust remoteReceiverStateSetTime by the time slept
+  if (remoteTimeRemaining >= 8000) {
+    remoteReceiverStateSetTime -= 8000;
+    return SLEEP_8S;
+  } else if (remoteTimeRemaining >= 4000) {
+    remoteReceiverStateSetTime -= 4000;
+    return SLEEP_4S;
+  } else if (remoteTimeRemaining >= 2000) {
+    remoteReceiverStateSetTime -= 2000;
+    return SLEEP_2S;
+  } else if (remoteTimeRemaining >= 1000) {
+    remoteReceiverStateSetTime -= 1000;
+    return SLEEP_1S;
+  } else if (remoteTimeRemaining >= 500) {
+    remoteReceiverStateSetTime -= 500;
+    return SLEEP_500MS;
+  } else if (remoteTimeRemaining >= 250) {
+    remoteReceiverStateSetTime -= 250;
+    return SLEEP_250MS;
+  } else if (remoteTimeRemaining >= 120) {
+    remoteReceiverStateSetTime -= 120;
+    return SLEEP_120MS;
+  } else if (remoteTimeRemaining >= 60) {
+    remoteReceiverStateSetTime -= 60;
+    return SLEEP_60MS;
+  } else if (remoteTimeRemaining >= 30) {
+    remoteReceiverStateSetTime -= 30;
+    return SLEEP_30MS;
+  } else {
+    remoteReceiverStateSetTime -= 15;
+    return SLEEP_15MS;
+  }
 }
 
 // Convert the raw data value (0 - 1023) to voltage (0.0V - voltageLimitV):
@@ -255,4 +324,9 @@ void hysteresisCheck(AnalogHysteresis* analogHysteresis, float analogVoltage) {
   } else if (analogHysteresis->onValue <= analogVoltage) {
     analogHysteresis->isOn = true;
   }
+}
+
+// Wake up function for button presses
+void wakeUp() {
+  // We dont actually need to do anything here right now.
 }
