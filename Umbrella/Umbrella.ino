@@ -4,8 +4,8 @@
 const float batteryLimitOffValue = 2.6; // Battery threshold, turns off lights and only allows the umbrella to close when its off.
 const float batteryLimitOnValue = 3.0;
 // Constants for opening and closing the umbrella
-float openingAmpLimit = 6.0; // the nnA for the opening current limit. Allowable range: 0.0 - 7.0
-const float voltageLimit = 5.0; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
+float openingAmpLimit = 4.0; // the nnA for the opening current limit. Allowable range: 0.0 - 7.0
+const float voltageLimit = 3.3; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
 const float motorVoltageMinimum = 2.5; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
 const float motorAmpsCoefficient = 10;
 const long remoteReceiverOnDuration = 1500; // How long in milliseconds the remote receiver stays on for in a cycle.
@@ -25,9 +25,9 @@ void hysteresisCheck(AnalogHysteresis* analogHysteresis, float analogVoltage);
 AnalogHysteresis batteryVoltageLimit = {batteryLimitOffValue, batteryLimitOnValue, true}; // The limit for the battery, disables light and limits umbrella to closing when battery level is lower than this
 
 // Motor consts and vars
-const int motorButtonPin = 3;		// the number of the motor button pin
-const int motorUpPin = 7;			// Output pin for up motor
-const int motorDownPin = 8;		// Output pin for down motor
+const int motorButtonPin = 2;		// the number of the motorButton pin
+const int motorUpPin = 6;			// Output pin for up motor
+const int motorDownPin = 7;		// Output pin for down motor
 
 // Up/Down states
 const int OPENING = 0;
@@ -39,13 +39,13 @@ const int OPEN_PARTIAL = 4;
 int lastMotorButtonState = LOW;
 int motorButtonState;
 int motorState = CLOSED;
-int motorStateAddress = 0;
+const int motorStateAddress = 0;
 unsigned long lastMotorDebounceTime = 0;  // the last time the output pin was toggled
 unsigned long currentMonitorDelayStartTime = 0; // The start time of a current monitor delay
 
 // Light consts and vars
-const int lightButtonPin = 4;     	// Light button in pin
-const int lightOutPin = 6;			// Light out pin
+const int lightButtonPin = 3;     	// Light button in pin
+const int lightOutPin = 8;			// Light out pin
 
 int lastLightButtonState = LOW;
 int lightButtonState;
@@ -53,21 +53,31 @@ int lightState = LOW;
 unsigned long lastLightDebounceTime = 0;  // the last time the output pin was toggled
 
 // Battery consts and vars
-const int batteryInPin = A2;     	// Light button in pin
+const int batteryInPin = A2;     	// Battery in in pin
 
 // Motor current consts and vars
 const int motorCurrentPin = A1;
 
-// Remote consts and vars
-int remoteReceiverState = HIGH;
-long remoteReceiverStateDuration = 0;
-const int remoteReceiverPin = 11;
+// Pulse consts and vars
+const int pulsePin = 9;			// The pin we listen for pulses on
+const int pulseResetPin = 5;	// The pin which can reset pulses
+int pulseCount = 0;
+const int pulseCountAddress = 1;
+
+int lastResetButtonState = LOW;
+int resetButtonState;
+int resetState = LOW;
+unsigned long lastResetDebounceTime = 0;  // the last time the output pin was toggled
+
+int pulseState;
+bool firstLoop = true;
 
 // Other consts and vars
 unsigned long debounceDelay = 50;    // the debounce time
+unsigned long resetDebounceDelay = 1000;    // the debounce time
 
-void setup()
-{
+
+void setup() {
   pinMode(lightButtonPin, INPUT);
   pinMode(lightOutPin, OUTPUT);
   
@@ -75,18 +85,18 @@ void setup()
   pinMode(motorUpPin, OUTPUT);
   pinMode(motorDownPin, OUTPUT);
   
-  pinMode(remoteReceiverPin, OUTPUT);
-  
   pinMode(batteryInPin, INPUT);
   pinMode(motorCurrentPin, INPUT);
+  
+  pinMode(pulsePin, INPUT);
+  pinMode(pulseResetPin, INPUT);
   
   // Set initial out states
   digitalWrite(lightOutPin, lightState);
   digitalWrite(motorUpPin, LOW);
   digitalWrite(motorDownPin, LOW);
-  digitalWrite(remoteReceiverPin, remoteReceiverState);
   
- // Serial.begin(9600);
+  //Serial.begin(9600);
   
   // Configure the initial umbrella state, reading from the EEPROM.
   motorState = EEPROM.read(motorStateAddress);
@@ -98,12 +108,17 @@ void setup()
     motorState = CLOSED;
   }
   
+  // Load pulse count
+  pulseCount = EEPROM.read(pulseCountAddress);
+  if (pulseCount < 0) {
+    pulseCount = 0;
+  }
+  
   // Check that the opening and closing amps are within the allowable ranges.
   openingAmpLimit = openingAmpLimit < 0.0 ? 0.0 : openingAmpLimit > 7.0 ? 7.0 : openingAmpLimit;
 }
 
-void loop()
-{
+void loop() {
   // Get the millis time for this loop.
   const long loopMillis = millis();
   
@@ -114,6 +129,9 @@ void loop()
   // Check the battery level
   hysteresisCheck(&batteryVoltageLimit, batteryVoltage);
 //  Serial.println(batteryVoltage);
+  
+  // Read battery voltage
+  //Serial.println(analogRead(batteryInPin));
   
   // Handle lights input
   int lightReading = digitalRead(lightButtonPin);
@@ -145,6 +163,34 @@ void loop()
   
   // save the reading. Next time through the loop, it'll be the lastButtonState:
   lastLightButtonState = lightReading;
+  
+  // Handle pulse input
+  int pulseReading = digitalRead(pulsePin);
+
+  if (firstLoop) {
+    firstLoop = false;
+    pulseState = pulseReading;
+  }
+  
+  // if the input state has changed:
+  if (pulseReading != pulseState) {
+    pulseState = pulseReading;
+
+    // If we are in any of the open or opending states, increment the pulses
+    // If closing, decrement
+    switch (motorState) {
+      case OPENING:
+      case OPEN:
+      case OPEN_PARTIAL:
+      pulseCount += 1;
+      break;
+      case CLOSING:
+      case CLOSED:
+      pulseCount -= 1;
+      break;
+    }
+  }
+  //Serial.println(pulseCount);
   
   // Handle motor input
   int motorReading = digitalRead(motorButtonPin);
@@ -190,12 +236,20 @@ void loop()
   
   // Update up/down state based on motor state and input readings
   if (loopMillis > (currentMonitorDelayStartTime + currentMonitorDelay) && (motorState == OPENING || motorState == CLOSING)) {
-    float currentVoltage = analogToVoltage(analogRead(motorCurrentPin));
-    float currentAmps = (currentVoltage - motorVoltageMinimum) * motorAmpsCoefficient;
     
+    // When opeing, check against the current
     if (motorState == OPENING) {
+      float currentVoltage = analogToVoltage(analogRead(motorCurrentPin));
+      float currentAmps = (currentVoltage - motorVoltageMinimum) * motorAmpsCoefficient;
       if (currentAmps >= openingAmpLimit) {
         motorState = OPEN;
+      }
+    }
+    
+    // When closing, check against the pulse count
+    if (motorState == CLOSING) {
+      if (pulseCount <= 0) {
+        motorState = CLOSED;
       }
     }
   }
@@ -203,15 +257,31 @@ void loop()
   if (motorState != OPEN) {
     lightState = LOW;
   }
+
+  // Handle reset input
+  int resetReading = digitalRead(pulseResetPin);
   
-  // Work out the remote receiver state
-  if (remoteReceiverState && (remoteReceiverStateDuration + remoteReceiverOnDuration < loopMillis)) {
-    remoteReceiverState = LOW;
-    remoteReceiverStateDuration = loopMillis;
-  } else if (!remoteReceiverState && (remoteReceiverStateDuration + remoteReceiverOffDuration < loopMillis)) {
-    remoteReceiverState = HIGH;
-    remoteReceiverStateDuration = loopMillis;
+  if (resetReading != lastResetButtonState) {
+    // reset the debouncing timer
+    lastResetDebounceTime = loopMillis;
   }
+  
+  if ((loopMillis - lastResetDebounceTime) > resetDebounceDelay) {
+    // whatever the reading is at, it's been there for longer than the debounce
+    // delay, so take it as the actual current state:
+
+    // if the button state has changed:
+    if (resetReading != resetButtonState) {
+      resetButtonState = resetReading;
+
+      if (resetButtonState == HIGH) {
+        pulseCount = 0;
+      }
+    }
+  }
+  
+  // save the reading. Next time through the loop, it'll be the lastButtonState:
+  lastResetButtonState = resetReading;
   
   // OUTPUTS
   
@@ -236,11 +306,9 @@ void loop()
     break;
   }
   
-  // set the remote receiver state
-  digitalWrite(remoteReceiverPin, remoteReceiverState);
-  
-  // Save the umbrella state
+  // Save the umbrella state and pulse count
   EEPROM.update(motorStateAddress, motorState);
+  EEPROM.update(pulseCountAddress, pulseCount);
 }
 
 // Convert the raw data value (0 - 1023) to voltage (0.0V - voltageLimitV):
