@@ -212,7 +212,7 @@ void loop() {
       if (motorButtonState == HIGH) {
         currentMonitorDelayStartTime = loopMillis;
         
-		switch (motorState) {
+		    switch (motorState) {
           case OPENING:
           motorState = OPEN_PARTIAL;
           break;
@@ -221,7 +221,7 @@ void loop() {
           motorState = CLOSING;
           break;
           case CLOSED:
-          motorState = !batteryVoltageLimit.isOn ? CLOSING : OPENING;
+          motorState = batteryVoltageLimit.isOn ? OPENING : CLOSING;
           break;
           case CLOSING:
           motorState = CLOSED;

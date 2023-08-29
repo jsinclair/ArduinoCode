@@ -1,4 +1,5 @@
 Implement sleep mode - More research/queries needed
+Add digital out thats on before and after motor turns on (same for up and down)
 DONE - Pulse Count/potential other implementation for determining open/close state
 DONE - De-bounce on manual switch for lights + open/close
 
