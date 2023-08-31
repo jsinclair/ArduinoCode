@@ -8,9 +8,9 @@ float openingAmpLimit = 4.0; // the nnA for the opening current limit. Allowable
 const float voltageLimit = 3.3; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
 const float motorVoltageMinimum = 2.5; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
 const float motorAmpsCoefficient = 10;
-const long remoteReceiverOnDuration = 1500; // How long in milliseconds the remote receiver stays on for in a cycle.
-const long remoteReceiverOffDuration = 5000; // How long in milliseconds the remote receiver stays off for in a cycle.
 unsigned long currentMonitorDelay = 500; // Current monitor delay for opening and closing, in milliseconds
+unsigned long startPulseDetectorDelay = 2000; // Delay before starting the motor, when we power on the pulse detector out
+unsigned long stopPulseDetectorDelay = 1000; // Delay after stopping the motor, when we power off the pulse detector out
 
 // Hysteresis struct to manage the various thresholds
 struct AnalogHysteresis {
@@ -58,6 +58,10 @@ const int batteryInPin = A2;     	// Battery in in pin
 // Motor current consts and vars
 const int motorCurrentPin = A1;
 
+// Pulse detector consts and vars
+unsigned long pulseDetectorStateDuration = 0;
+const int pulseDetectorPin = 10;
+
 // Pulse consts and vars
 const int pulsePin = 9;			// The pin we listen for pulses on
 const int pulseResetPin = 5;	// The pin which can reset pulses
@@ -66,7 +70,6 @@ const int pulseCountAddress = 1;
 
 int lastResetButtonState = LOW;
 int resetButtonState;
-int resetState = LOW;
 unsigned long lastResetDebounceTime = 0;  // the last time the output pin was toggled
 
 int pulseState;
@@ -75,7 +78,6 @@ bool firstLoop = true;
 // Other consts and vars
 unsigned long debounceDelay = 50;    // the debounce time
 unsigned long resetDebounceDelay = 1000;    // the debounce time
-
 
 void setup() {
   pinMode(lightButtonPin, INPUT);
@@ -90,11 +92,14 @@ void setup() {
   
   pinMode(pulsePin, INPUT);
   pinMode(pulseResetPin, INPUT);
+
+  pinMode(pulseDetectorPin, OUTPUT);
   
   // Set initial out states
   digitalWrite(lightOutPin, lightState);
   digitalWrite(motorUpPin, LOW);
   digitalWrite(motorDownPin, LOW);
+  digitalWrite(pulseDetectorPin, LOW);
   
   //Serial.begin(9600);
   
@@ -128,7 +133,7 @@ void loop() {
   
   // Check the battery level
   hysteresisCheck(&batteryVoltageLimit, batteryVoltage);
-//  Serial.println(batteryVoltage);
+  //Serial.println(batteryVoltage);
   
   // Read battery voltage
   //Serial.println(analogRead(batteryInPin));
@@ -209,22 +214,25 @@ void loop() {
       motorButtonState = motorReading;
 
       // only toggle the LED if the new button state is HIGH
-      if (motorButtonState == HIGH) {
-        currentMonitorDelayStartTime = loopMillis;
-        
-		    switch (motorState) {
+      if (motorButtonState == HIGH) {        
+		switch (motorState) {
           case OPENING:
           motorState = OPEN_PARTIAL;
+          pulseDetectorStateDuration = loopMillis + stopPulseDetectorDelay;
           break;
           case OPEN:
           case OPEN_PARTIAL:
           motorState = CLOSING;
+          pulseDetectorStateDuration = loopMillis + startPulseDetectorDelay;
           break;
           case CLOSED:
           motorState = batteryVoltageLimit.isOn ? OPENING : CLOSING;
+          pulseDetectorStateDuration = loopMillis + startPulseDetectorDelay;
+          currentMonitorDelayStartTime = loopMillis;
           break;
           case CLOSING:
           motorState = CLOSED;
+          pulseDetectorStateDuration = loopMillis + stopPulseDetectorDelay;
           break;
         }
       }
@@ -235,22 +243,22 @@ void loop() {
   lastMotorButtonState = motorReading;
   
   // Update up/down state based on motor state and input readings
-  if (loopMillis > (currentMonitorDelayStartTime + currentMonitorDelay) && (motorState == OPENING || motorState == CLOSING)) {
-    
+  if (motorState == OPENING && loopMillis > (currentMonitorDelayStartTime + currentMonitorDelay + startPulseDetectorDelay)) {
     // When opeing, check against the current
     if (motorState == OPENING) {
       float currentVoltage = analogToVoltage(analogRead(motorCurrentPin));
       float currentAmps = (currentVoltage - motorVoltageMinimum) * motorAmpsCoefficient;
       if (currentAmps >= openingAmpLimit) {
         motorState = OPEN;
+        pulseDetectorStateDuration = loopMillis + stopPulseDetectorDelay;
       }
     }
-    
-    // When closing, check against the pulse count
-    if (motorState == CLOSING) {
-      if (pulseCount <= 0) {
-        motorState = CLOSED;
-      }
+  }
+  // When closing, check against the pulse count
+  if (motorState == CLOSING) {
+    if (pulseCount <= 0) {
+      motorState = CLOSED;
+      pulseDetectorStateDuration = loopMillis + stopPulseDetectorDelay;
     }
   }
   
@@ -287,16 +295,23 @@ void loop() {
   
   // set the light output
   digitalWrite(lightOutPin, lightState);
+
+  // set pulse sensor out
+  if ((motorState == OPENING || motorState == CLOSING) || loopMillis < pulseDetectorStateDuration) {
+    digitalWrite(pulseDetectorPin, HIGH);
+  } else {
+    digitalWrite(pulseDetectorPin, LOW);
+  }
   
   // set the motor outputs
   switch (motorState) {
     case OPENING:
-    digitalWrite(motorUpPin, HIGH);
+    digitalWrite(motorUpPin, loopMillis >= pulseDetectorStateDuration);
     digitalWrite(motorDownPin, LOW);
     break;
     case CLOSING:
     digitalWrite(motorUpPin, LOW);
-    digitalWrite(motorDownPin, HIGH);
+    digitalWrite(motorDownPin, loopMillis >= pulseDetectorStateDuration);
     break;
     case OPEN:
     case OPEN_PARTIAL:
