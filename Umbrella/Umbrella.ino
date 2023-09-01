@@ -1,15 +1,17 @@
 #include <EEPROM.h>
 
 // Float constants for battery thresholds. All values in volts.
-const float batteryLimitOffValue = 2.6; // Battery threshold, turns off lights and only allows the umbrella to close when its off.
+const float batteryLimitOffValue = 2.8; // Battery threshold, turns off lights and only allows the umbrella to close when its off.
 const float batteryLimitOnValue = 3.0;
 // Constants for opening and closing the umbrella
 float openingAmpLimit = 4.0; // the nnA for the opening current limit. Allowable range: 0.0 - 7.0
 const float voltageLimit = 3.3; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
-const float motorVoltageMinimum = 2.5; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
-const float motorAmpsCoefficient = 10;
-unsigned long currentMonitorDelay = 500; // Current monitor delay for opening and closing, in milliseconds
-unsigned long startPulseDetectorDelay = 2000; // Delay before starting the motor, when we power on the pulse detector out
+const float motorVoltageMinimum = 1.25; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
+const float motorAmpsCoefficient = 15;
+const float maxCurrentAmps = 15;
+const float maxCurrentVolts = 2;
+unsigned long currentMonitorDelay = 600; // Current monitor delay for opening and closing, in milliseconds
+unsigned long startPulseDetectorDelay = 300; // Delay before starting the motor, when we power on the pulse detector out
 unsigned long stopPulseDetectorDelay = 1000; // Delay after stopping the motor, when we power off the pulse detector out
 
 // Hysteresis struct to manage the various thresholds
@@ -67,17 +69,20 @@ const int pulsePin = 9;			// The pin we listen for pulses on
 const int pulseResetPin = 5;	// The pin which can reset pulses
 int pulseCount = 0;
 const int pulseCountAddress = 1;
+unsigned long lastPulseDebounceTime = 0;  // the last time the output pin was toggled
 
 int lastResetButtonState = LOW;
 int resetButtonState;
 unsigned long lastResetDebounceTime = 0;  // the last time the output pin was toggled
 
 int pulseState;
+int lastPulseState;
 bool firstLoop = true;
 
 // Other consts and vars
-unsigned long debounceDelay = 50;    // the debounce time
-unsigned long resetDebounceDelay = 1000;    // the debounce time
+unsigned long debounceDelay = 50;    // the standard button debounce time
+unsigned long resetDebounceDelay = 1000;    // the reset button debounce time
+unsigned long pulseDebounceDelay = 10;    // the debounce time between pulse registers
 
 void setup() {
   pinMode(lightButtonPin, INPUT);
@@ -120,7 +125,7 @@ void setup() {
   }
   
   // Check that the opening and closing amps are within the allowable ranges.
-  openingAmpLimit = openingAmpLimit < 0.0 ? 0.0 : openingAmpLimit > 7.0 ? 7.0 : openingAmpLimit;
+  openingAmpLimit = openingAmpLimit < 0.0 ? 0.0 : openingAmpLimit > maxCurrentAmps ? maxCurrentAmps : openingAmpLimit;
 }
 
 void loop() {
@@ -128,12 +133,13 @@ void loop() {
   const long loopMillis = millis();
   
   // BATTERY MONITOR
-  // Convert the raw data value to voltage:
+  // Read battery voltage
   float batteryVoltage = analogToVoltage(analogRead(batteryInPin));
   
   // Check the battery level
   hysteresisCheck(&batteryVoltageLimit, batteryVoltage);
   //Serial.println(batteryVoltage);
+  //Serial.println(batteryVoltageLimit.isOn);
   
   // Read battery voltage
   //Serial.println(analogRead(batteryInPin));
@@ -177,25 +183,32 @@ void loop() {
     pulseState = pulseReading;
   }
   
-  // if the input state has changed:
-  if (pulseReading != pulseState) {
-    pulseState = pulseReading;
+  if (pulseReading != lastPulseState) {
+    lastPulseDebounceTime = loopMillis;
+  }
 
-    // If we are in any of the open or opending states, increment the pulses
-    // If closing, decrement
-    switch (motorState) {
-      case OPENING:
-      case OPEN:
-      case OPEN_PARTIAL:
-      pulseCount += 1;
-      break;
-      case CLOSING:
-      case CLOSED:
-      pulseCount -= 1;
-      break;
+  if ((loopMillis - lastPulseDebounceTime) >= pulseDebounceDelay) {
+    // if the input state has changed:
+    if (pulseReading != pulseState) {
+      pulseState = pulseReading;
+
+      // If we are in any of the open or opending states, increment the pulses
+      // If closing, decrement
+      switch (motorState) {
+        case OPENING:
+        case OPEN:
+        case OPEN_PARTIAL:
+        pulseCount += 1;
+        break;
+        case CLOSING:
+        case CLOSED:
+        pulseCount -= 1;
+        break;
+      }
+      //Serial.println(pulseCount);
     }
   }
-  //Serial.println(pulseCount);
+  lastPulseState = pulseReading;
   
   // Handle motor input
   int motorReading = digitalRead(motorButtonPin);
@@ -215,7 +228,7 @@ void loop() {
 
       // only toggle the LED if the new button state is HIGH
       if (motorButtonState == HIGH) {        
-		switch (motorState) {
+		    switch (motorState) {
           case OPENING:
           motorState = OPEN_PARTIAL;
           pulseDetectorStateDuration = loopMillis + stopPulseDetectorDelay;
@@ -247,7 +260,15 @@ void loop() {
     // When opeing, check against the current
     if (motorState == OPENING) {
       float currentVoltage = analogToVoltage(analogRead(motorCurrentPin));
-      float currentAmps = (currentVoltage - motorVoltageMinimum) * motorAmpsCoefficient;
+      float currentAmps = ((currentVoltage - motorVoltageMinimum) / maxCurrentVolts) * motorAmpsCoefficient;
+      // Serial.print("currentVoltage: ");
+      // Serial.println(currentVoltage);
+
+      // Serial.print("Diff: ");
+      // Serial.println(((currentVoltage - motorVoltageMinimum) / maxCurrentVolts));
+
+      // Serial.print("currentAmps: ");
+      // Serial.println(currentAmps);
       if (currentAmps >= openingAmpLimit) {
         motorState = OPEN;
         pulseDetectorStateDuration = loopMillis + stopPulseDetectorDelay;
@@ -328,7 +349,7 @@ void loop() {
 
 // Convert the raw data value (0 - 1023) to voltage (0.0V - voltageLimitV):
 float analogToVoltage(int analogReadValue) {
-  return analogReadValue * (voltageLimit / 1023.0);
+  return (analogReadValue / 1023.0) * voltageLimit;
 }
 
 // Checks whether or not the new voltage should trigger a change in state
