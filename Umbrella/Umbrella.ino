@@ -1,18 +1,19 @@
 #include <EEPROM.h>
 
 // Float constants for battery thresholds. All values in volts.
-const float batteryLimitOffValue = 2.8; // Battery threshold, turns off lights and only allows the umbrella to close when its off.
-const float batteryLimitOnValue = 3.0;
+const float batteryMotorLimitOffValue = 2.8; // Battery threshold for the motor, the umbrella can only close when its off.
+const float batteryMotorLimitOnValue = 3.0;
+const float batteryLightLimitOffValue = 2.75; // Battery threshold for the lights.
+const float batteryLightLimitOnValue = 2.9;
 // Constants for opening and closing the umbrella
-float openingAmpLimit = 4.0; // the nnA for the opening current limit. Allowable range: 0.0 - 7.0
+float openingAmpLimit = 7.0; // the nnA for the opening current limit. Allowable range: 0.0 - maxCurrentAmps
 const float voltageLimit = 3.3; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
 const float motorVoltageMinimum = 1.25; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
-const float motorAmpsCoefficient = 15;
 const float maxCurrentAmps = 15;
-const float maxCurrentVolts = 2;
 unsigned long currentMonitorDelay = 600; // Current monitor delay for opening and closing, in milliseconds
 unsigned long startPulseDetectorDelay = 300; // Delay before starting the motor, when we power on the pulse detector out
 unsigned long stopPulseDetectorDelay = 1000; // Delay after stopping the motor, when we power off the pulse detector out
+float openingVoltLimit; // Calculated in setup: (openingAmpLimit * 0.05) + motorVoltageMinimum
 
 // Hysteresis struct to manage the various thresholds
 struct AnalogHysteresis {
@@ -24,7 +25,8 @@ struct AnalogHysteresis {
 void hysteresisCheck(AnalogHysteresis* analogHysteresis, float analogVoltage);
 
 // The various thresholds. The first number is the off value, the second is the on value. The third value is the default state of the check.
-AnalogHysteresis batteryVoltageLimit = {batteryLimitOffValue, batteryLimitOnValue, true}; // The limit for the battery, disables light and limits umbrella to closing when battery level is lower than this
+AnalogHysteresis motorVoltageLimit = {batteryMotorLimitOffValue, batteryMotorLimitOnValue, true}; // The limit for the battery, limits umbrella to closing when battery level is lower than this
+AnalogHysteresis lightsVoltageLimit = {batteryLightLimitOffValue, batteryLightLimitOnValue, true}; // The limit for the battery, disables lights when battery level is lower than this
 
 // Motor consts and vars
 const int motorButtonPin = 2;		// the number of the motorButton pin
@@ -126,6 +128,8 @@ void setup() {
   
   // Check that the opening and closing amps are within the allowable ranges.
   openingAmpLimit = openingAmpLimit < 0.0 ? 0.0 : openingAmpLimit > maxCurrentAmps ? maxCurrentAmps : openingAmpLimit;
+  // Calculate opening volt limit
+  openingVoltLimit = (openingAmpLimit * 0.05) + motorVoltageMinimum;
 }
 
 void loop() {
@@ -137,12 +141,9 @@ void loop() {
   float batteryVoltage = analogToVoltage(analogRead(batteryInPin));
   
   // Check the battery level
-  hysteresisCheck(&batteryVoltageLimit, batteryVoltage);
-  //Serial.println(batteryVoltage);
-  //Serial.println(batteryVoltageLimit.isOn);
-  
-  // Read battery voltage
-  //Serial.println(analogRead(batteryInPin));
+  hysteresisCheck(&lightsVoltageLimit, batteryVoltage);
+  hysteresisCheck(&motorVoltageLimit, batteryVoltage);
+  //Serial.println(motorVoltageLimit.isOn);
   
   // Handle lights input
   int lightReading = digitalRead(lightButtonPin);
@@ -168,7 +169,7 @@ void loop() {
   }
   
   // If the battery is too low, just always turn the lights off
-  if (!batteryVoltageLimit.isOn) {
+  if (!lightsVoltageLimit.isOn) {
     lightState = LOW;
   }
   
@@ -181,6 +182,7 @@ void loop() {
   if (firstLoop) {
     firstLoop = false;
     pulseState = pulseReading;
+    lastPulseState = pulseReading;
   }
   
   if (pulseReading != lastPulseState) {
@@ -239,7 +241,7 @@ void loop() {
           pulseDetectorStateDuration = loopMillis + startPulseDetectorDelay;
           break;
           case CLOSED:
-          motorState = batteryVoltageLimit.isOn ? OPENING : CLOSING;
+          motorState = motorVoltageLimit.isOn ? OPENING : CLOSING;
           pulseDetectorStateDuration = loopMillis + startPulseDetectorDelay;
           currentMonitorDelayStartTime = loopMillis;
           break;
@@ -258,21 +260,11 @@ void loop() {
   // Update up/down state based on motor state and input readings
   if (motorState == OPENING && loopMillis > (currentMonitorDelayStartTime + currentMonitorDelay + startPulseDetectorDelay)) {
     // When opeing, check against the current
-    if (motorState == OPENING) {
-      float currentVoltage = analogToVoltage(analogRead(motorCurrentPin));
-      float currentAmps = ((currentVoltage - motorVoltageMinimum) / maxCurrentVolts) * motorAmpsCoefficient;
-      // Serial.print("currentVoltage: ");
-      // Serial.println(currentVoltage);
-
-      // Serial.print("Diff: ");
-      // Serial.println(((currentVoltage - motorVoltageMinimum) / maxCurrentVolts));
-
-      // Serial.print("currentAmps: ");
-      // Serial.println(currentAmps);
-      if (currentAmps >= openingAmpLimit) {
-        motorState = OPEN;
-        pulseDetectorStateDuration = loopMillis + stopPulseDetectorDelay;
-      }
+    float currentVoltage = analogToVoltage(analogRead(motorCurrentPin));
+      
+    if (currentVoltage >= openingVoltLimit) {
+      motorState = OPEN;
+      pulseDetectorStateDuration = loopMillis + stopPulseDetectorDelay;
     }
   }
   // When closing, check against the pulse count

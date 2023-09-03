@@ -1,7 +1,8 @@
 Add digital out for ANY arduino activity. Used for battery optimization.
-Update amp calculation, as per meeting notes and spreadsheet, its madness.
-Add new battery limit for lights.
+Verify/update EEPROM implementation.
 
+DONE - Add new battery limit for lights.
+DONE - Update amp calculation, as per meeting notes and spreadsheet, its madness.
 DONE - Add digital out thats on before and after motor turns on (same for up and down)
 DONE - Pulse Count/potential other implementation for determining open/close state
 DONE - De-bounce on manual switch for lights + open/close
