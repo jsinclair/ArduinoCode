@@ -1,6 +1,8 @@
-Add digital out for ANY arduino activity. Used for battery optimization.
-Verify/update EEPROM implementation.
+Check EEPROM dieing problem... talk with Fredi and check here: https://forum.arduino.cc/t/eeprom-questions-on-the-100-000-write-limit/273399/25
+Long running millis wrap around problem.
 
+DONE - Verify/update EEPROM implementation.
+DONE - Add digital out for ANY arduino activity. Used for battery optimization.
 DONE - Add new battery limit for lights.
 DONE - Update amp calculation, as per meeting notes and spreadsheet, its madness.
 DONE - Add digital out thats on before and after motor turns on (same for up and down)
