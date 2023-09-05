@@ -43,7 +43,6 @@ const int OPEN_PARTIAL = 4;
 int lastMotorButtonState = LOW;
 int motorButtonState;
 int motorState = CLOSED;
-const int motorStateAddress = 0;
 unsigned long lastMotorDebounceTime = 0;  // the last time the output pin was toggled
 unsigned long currentMonitorDelayStartTime = 0; // The start time of a current monitor delay
 
@@ -70,7 +69,6 @@ const int pulseDetectorPin = 10;
 const int pulsePin = 9;			// The pin we listen for pulses on
 const int pulseResetPin = 5;	// The pin which can reset pulses
 int pulseCount = 0;
-int pulseCountAddress;
 unsigned long lastPulseDebounceTime = 0;  // the last time the output pin was toggled
 
 int lastResetButtonState = LOW;
@@ -88,6 +86,11 @@ const int activityPin = 4;
 unsigned long debounceDelay = 50;    // the standard button debounce time
 unsigned long resetDebounceDelay = 1000;    // the reset button debounce time
 unsigned long pulseDebounceDelay = 10;    // the debounce time between pulse registers
+
+// EEPROM Stuff
+const int motorStateAddress = 0;
+int firstRunAddress;
+int pulseCountAddress;
 
 void setup() {
   pinMode(lightButtonPin, INPUT);
@@ -118,18 +121,32 @@ void setup() {
   
   // Configure the initial umbrella state, reading from the EEPROM.
   motorState = readIntFromEEPROM(motorStateAddress);
-  if (motorState == OPENING) {
-    motorState = CLOSED;
-  } else if (motorState == CLOSING) {
-    motorState = OPEN_PARTIAL;
-  } else if (motorState < 0) {
-    motorState = CLOSED;
+  switch(motorState) {
+    case OPEN:
+    case CLOSED:
+    case OPEN_PARTIAL:
+      break;
+    case CLOSING:
+      motorState = OPEN_PARTIAL;
+      break;
+    default:
+      motorState = CLOSED;
+      break;
   }
   
-  // Load pulse count
-  pulseCountAddress = sizeof(int);
-  pulseCount = readIntFromEEPROM(pulseCountAddress);
-  
+  // Check if the byte after the motor state in eeprom is 0
+  // If it is, then read the read the following bytes to the pulse count.
+  // If it isnt, this is out first run. Set it and the following bytes to 0 and pulseCount to 0
+  firstRunAddress = sizeof(int);
+  pulseCountAddress = firstRunAddress + 1;
+  if (EEPROM.read(firstRunAddress) != 0) {
+    EEPROM.write(firstRunAddress, 0);
+    writeIntIntoEEPROM(pulseCountAddress, 0);
+    pulseCount = 0;
+  } else {
+    pulseCount = readIntFromEEPROM(pulseCountAddress);
+  }
+
   // Check that the opening amps fall within the allowable ranges.
   openingAmpLimit = openingAmpLimit < 0.0 ? 0.0 : openingAmpLimit > maxCurrentAmps ? maxCurrentAmps : openingAmpLimit;
   // Calculate opening volt limit
@@ -147,6 +164,7 @@ void loop() {
   // Check the battery level
   hysteresisCheck(&lightsVoltageLimit, batteryVoltage);
   hysteresisCheck(&motorVoltageLimit, batteryVoltage);
+  //Serial.print(lightsVoltageLimit.isOn);
   //Serial.println(motorVoltageLimit.isOn);
   
   // Handle lights input
@@ -360,9 +378,9 @@ int getActivity(long loopMillis) {
 
   // check button debounces
   if (
-    ((loopMillis - lastResetDebounceTime) <= resetDebounceDelay) ||
-    ((loopMillis - lastMotorDebounceTime) <= debounceDelay) ||
-    ((loopMillis - lastLightDebounceTime) <= debounceDelay)
+    ((loopMillis - lastResetDebounceTime) <= resetDebounceDelay && lastResetButtonState == HIGH) ||
+    ((loopMillis - lastMotorDebounceTime) <= debounceDelay && lastMotorButtonState == HIGH) ||
+    ((loopMillis - lastLightDebounceTime) <= debounceDelay && lastLightButtonState == HIGH)
   ) {
     return HIGH;
   }
