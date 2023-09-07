@@ -10,9 +10,9 @@ float openingAmpLimit = 7.0; // the nnA for the opening current limit. Allowable
 const float voltageLimit = 3.3; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
 const float motorVoltageMinimum = 1.25; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
 const float maxCurrentAmps = 15;
-unsigned long currentMonitorDelay = 600; // Current monitor delay for opening and closing, in milliseconds
-unsigned long startPulseDetectorDelay = 300; // Delay before starting the motor, when we power on the pulse detector out
-unsigned long stopPulseDetectorDelay = 1000; // Delay after stopping the motor, when we power off the pulse detector out
+const unsigned long currentMonitorDelay = 600; // Current monitor delay for opening and closing, in milliseconds
+const unsigned long startPulseDetectorDelay = 300; // Delay before starting the motor, when we power on the pulse detector out
+const unsigned long stopPulseDetectorDelay = 1000; // Delay after stopping the motor, when we power off the pulse detector out
 float openingVoltLimit; // Calculated in setup: (openingAmpLimit * 0.05) + motorVoltageMinimum
 
 // Hysteresis struct to manage the various thresholds
@@ -84,9 +84,9 @@ bool firstLoop = true;
 const int activityPin = 4;
 
 // Other consts and vars
-unsigned long debounceDelay = 50;    // the standard button debounce time
-unsigned long resetDebounceDelay = 1000;    // the reset button debounce time
-unsigned long pulseDebounceDelay = 10;    // the debounce time between pulse registers
+const unsigned long debounceDelay = 50;    // the standard button debounce time
+const unsigned long resetDebounceDelay = 1000;    // the reset button debounce time
+const unsigned long pulseDebounceDelay = 10;    // the debounce time between pulse registers
 
 // EEPROM Stuff
 const int motorStateAddress = 0;
