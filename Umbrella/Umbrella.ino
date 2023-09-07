@@ -393,20 +393,6 @@ int getActivity(long loopMillis) {
   return LOW;
 }
 
-// Convert the raw data value (0 - 1023) to voltage (0.0V - voltageLimitV):
-float analogToVoltage(int analogReadValue) {
-  return (analogReadValue / 1023.0) * voltageLimit;
-}
-
-// Checks whether or not the new voltage should trigger a change in state
-void hysteresisCheck(AnalogHysteresis* analogHysteresis, float analogVoltage) {
-  if (analogHysteresis->offValue >= analogVoltage) {
-    analogHysteresis->isOn = false;
-  } else if (analogHysteresis->onValue <= analogVoltage) {
-    analogHysteresis->isOn = true;
-  }
-}
-
 // Write the motor state to the EEPROM. Optimisted to reduce writes, improving longevity of EEPROM
 void writeMotorState() {
   int writeState;
@@ -425,6 +411,20 @@ void writeMotorState() {
       break;
   }
   writeIntIntoEEPROM(motorStateAddress, writeState);
+}
+
+// Convert the raw data value (0 - 1023) to voltage (0.0V - voltageLimitV):
+float analogToVoltage(int analogReadValue) {
+  return (analogReadValue / 1023.0) * voltageLimit;
+}
+
+// Checks whether or not the new voltage should trigger a change in state
+void hysteresisCheck(AnalogHysteresis* analogHysteresis, float analogVoltage) {
+  if (analogHysteresis->offValue >= analogVoltage) {
+    analogHysteresis->isOn = false;
+  } else if (analogHysteresis->onValue <= analogVoltage) {
+    analogHysteresis->isOn = true;
+  }
 }
 
 // For EEPROM notes: https://roboticsbackend.com/arduino-store-int-into-eeprom/
