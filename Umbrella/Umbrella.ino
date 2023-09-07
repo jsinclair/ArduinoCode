@@ -357,7 +357,7 @@ void loop() {
   }
   
   // Save the umbrella state and pulse count
-  writeIntIntoEEPROM(motorStateAddress, motorState);
+  writeMotorState();
   writeIntIntoEEPROM(pulseCountAddress, pulseCount);
 
   // Write to the activity pin
@@ -405,6 +405,26 @@ void hysteresisCheck(AnalogHysteresis* analogHysteresis, float analogVoltage) {
   } else if (analogHysteresis->onValue <= analogVoltage) {
     analogHysteresis->isOn = true;
   }
+}
+
+// Write the motor state to the EEPROM. Optimisted to reduce writes, improving longevity of EEPROM
+void writeMotorState() {
+  int writeState;
+  switch(motorState) {
+    case OPEN:
+      writeState = OPEN;
+      break;
+    case CLOSING:
+    case OPEN_PARTIAL:
+      writeState = OPEN_PARTIAL;
+      break;
+    case CLOSED:
+    case OPENING:
+    default:
+      writeState = CLOSED;
+      break;
+  }
+  writeIntIntoEEPROM(motorStateAddress, writeState);
 }
 
 // For EEPROM notes: https://roboticsbackend.com/arduino-store-int-into-eeprom/
