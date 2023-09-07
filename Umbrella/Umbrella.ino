@@ -345,12 +345,12 @@ void loop() {
   // set the motor outputs
   switch (motorState) {
     case OPENING:
-    digitalWrite(motorUpPin, loopMillis - pulseDetectorStartTime >= pulseDetectorDelay);
+    digitalWrite(motorUpPin, (loopMillis - pulseDetectorStartTime >= pulseDetectorDelay) ? HIGH : LOW);
     digitalWrite(motorDownPin, LOW);
     break;
     case CLOSING:
     digitalWrite(motorUpPin, LOW);
-    digitalWrite(motorDownPin, loopMillis - pulseDetectorStartTime >= pulseDetectorDelay);
+    digitalWrite(motorDownPin, (loopMillis - pulseDetectorStartTime >= pulseDetectorDelay) ? HIGH : LOW);
     break;
     case OPEN:
     case OPEN_PARTIAL:
