@@ -62,7 +62,8 @@ const int batteryInPin = A2;     	// Battery in in pin
 const int motorCurrentPin = A1;
 
 // Pulse detector consts and vars
-unsigned long pulseDetectorStateDuration = 0;
+unsigned long pulseDetectorStartTime = 0;
+unsigned long pulseDetectorDelay = 0;
 const int pulseDetectorPin = 10;
 
 // Pulse consts and vars
@@ -155,7 +156,7 @@ void setup() {
 
 void loop() {
   // Get the millis time for this loop.
-  const long loopMillis = millis();
+  const unsigned long loopMillis = millis();
 
   // BATTERY MONITOR
   // Read battery voltage
@@ -251,25 +252,26 @@ void loop() {
       motorButtonState = motorReading;
 
       // only toggle the LED if the new button state is HIGH
-      if (motorButtonState == HIGH) {        
+      if (motorButtonState == HIGH) {    
+        pulseDetectorStartTime = loopMillis;
 		    switch (motorState) {
           case OPENING:
           motorState = OPEN_PARTIAL;
-          pulseDetectorStateDuration = loopMillis + stopPulseDetectorDelay;
+          pulseDetectorDelay = stopPulseDetectorDelay;
           break;
           case OPEN:
           case OPEN_PARTIAL:
           motorState = CLOSING;
-          pulseDetectorStateDuration = loopMillis + startPulseDetectorDelay;
+          pulseDetectorDelay = startPulseDetectorDelay;
           break;
           case CLOSED:
           motorState = motorVoltageLimit.isOn ? OPENING : CLOSING;
-          pulseDetectorStateDuration = loopMillis + startPulseDetectorDelay;
+          pulseDetectorDelay = startPulseDetectorDelay;
           currentMonitorDelayStartTime = loopMillis;
           break;
           case CLOSING:
           motorState = CLOSED;
-          pulseDetectorStateDuration = loopMillis + stopPulseDetectorDelay;
+          pulseDetectorDelay = stopPulseDetectorDelay;
           break;
         }
       }
@@ -280,20 +282,22 @@ void loop() {
   lastMotorButtonState = motorReading;
   
   // Update up/down state based on motor state and input readings
-  if (motorState == OPENING && loopMillis > (currentMonitorDelayStartTime + currentMonitorDelay + startPulseDetectorDelay)) {
+  if (motorState == OPENING && (loopMillis - currentMonitorDelayStartTime > currentMonitorDelay + startPulseDetectorDelay)) {
     // When opeing, check against the current
     float currentVoltage = analogToVoltage(analogRead(motorCurrentPin));
-      
+    
     if (currentVoltage >= openingVoltLimit) {
       motorState = OPEN;
-      pulseDetectorStateDuration = loopMillis + stopPulseDetectorDelay;
+      pulseDetectorStartTime = loopMillis;
+      pulseDetectorDelay = stopPulseDetectorDelay;
     }
   }
   // When closing, check against the pulse count
   if (motorState == CLOSING) {
     if (pulseCount <= 0) {
       motorState = CLOSED;
-      pulseDetectorStateDuration = loopMillis + stopPulseDetectorDelay;
+      pulseDetectorStartTime = loopMillis;
+      pulseDetectorDelay = stopPulseDetectorDelay;
     }
   }
   
@@ -332,7 +336,7 @@ void loop() {
   digitalWrite(lightOutPin, lightState);
 
   // set pulse sensor out
-  if ((motorState == OPENING || motorState == CLOSING) || loopMillis < pulseDetectorStateDuration) {
+  if ((motorState == OPENING || motorState == CLOSING) || (loopMillis - pulseDetectorStartTime < pulseDetectorDelay)) {
     digitalWrite(pulseDetectorPin, HIGH);
   } else {
     digitalWrite(pulseDetectorPin, LOW);
@@ -341,12 +345,12 @@ void loop() {
   // set the motor outputs
   switch (motorState) {
     case OPENING:
-    digitalWrite(motorUpPin, loopMillis >= pulseDetectorStateDuration);
+    digitalWrite(motorUpPin, loopMillis - pulseDetectorStartTime >= pulseDetectorDelay);
     digitalWrite(motorDownPin, LOW);
     break;
     case CLOSING:
     digitalWrite(motorUpPin, LOW);
-    digitalWrite(motorDownPin, loopMillis >= pulseDetectorStateDuration);
+    digitalWrite(motorDownPin, loopMillis - pulseDetectorStartTime >= pulseDetectorDelay);
     break;
     case OPEN:
     case OPEN_PARTIAL:
@@ -365,7 +369,7 @@ void loop() {
 }
 
 // Checks for all possible forms of activity and returns HIGH if any of them are true, otherwise LOW.
-int getActivity(long loopMillis) {
+int getActivity(unsigned long loopMillis) {
   // Check light state
   if (lightState == HIGH) {
     return HIGH;
@@ -386,7 +390,7 @@ int getActivity(long loopMillis) {
   }
 
   // check sensor timer
-  if (loopMillis < pulseDetectorStateDuration) {
+  if (loopMillis - pulseDetectorStartTime < pulseDetectorDelay) {
     return HIGH;
   }
 
