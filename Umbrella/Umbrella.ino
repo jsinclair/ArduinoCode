@@ -94,6 +94,60 @@ int firstRunAddress;
 int pulseCountAddress;
 
 void setup() {
+  setupPins();
+  
+  //Serial.begin(9600);
+  
+  setInitialMotorState();
+  
+  setInitialPulseCount();
+
+  setOpeningLimits();
+}
+
+void loop() {
+  // Get the millis time for this loop.
+  const unsigned long loopMillis = millis();
+
+  // BATTERY MONITOR
+  updateBatteryLevel();
+  
+  // Handle lights input
+  handleLights(loopMillis);
+  
+  // Handle pulse input
+  handlePulses(loopMillis);
+  
+  // Handle motor input
+  handleMotorButtonInput(loopMillis);
+  
+  // Update up/down state based on motor state and input readings
+  handleMotorLogic(loopMillis);
+
+  // Handle reset input
+  handleResetButtonInput(loopMillis);
+  
+  // OUTPUTS
+  
+  // set the light output
+  digitalWrite(lightOutPin, lightState);
+
+  // set pulse sensor out
+  writePulseDetectorOut(loopMillis);
+  
+  // set the motor outputs
+  writeMotorStateOut(loopMillis);
+  
+  // Save the motor state and pulse count
+  saveMotorState();
+  saveIntIntoEEPROM(pulseCountAddress, pulseCount);
+
+  // Write to the activity pin
+  digitalWrite(activityPin, getActivity(loopMillis));
+}
+
+// --- Setup functions
+void setupPins() {
   pinMode(lightButtonPin, INPUT);
   pinMode(lightOutPin, OUTPUT);
   
@@ -117,9 +171,9 @@ void setup() {
   digitalWrite(motorDownPin, LOW);
   digitalWrite(pulseDetectorPin, LOW);
   digitalWrite(activityPin, HIGH);
-  
-  //Serial.begin(9600);
-  
+}
+
+void setInitialMotorState() {
   // Configure the initial umbrella state, reading from the EEPROM.
   motorState = readIntFromEEPROM(motorStateAddress);
   switch(motorState) {
@@ -134,7 +188,9 @@ void setup() {
       motorState = CLOSED;
       break;
   }
-  
+}
+
+void setInitialPulseCount() {
   // Check if the byte after the motor state in eeprom is 0
   // If it is, then read the read the following bytes to the pulse count.
   // If it isnt, this is out first run. Set it and the following bytes to 0 and pulseCount to 0
@@ -142,23 +198,22 @@ void setup() {
   pulseCountAddress = firstRunAddress + 1;
   if (EEPROM.read(firstRunAddress) != 0) {
     EEPROM.write(firstRunAddress, 0);
-    writeIntIntoEEPROM(pulseCountAddress, 0);
+    saveIntIntoEEPROM(pulseCountAddress, 0);
     pulseCount = 0;
   } else {
     pulseCount = readIntFromEEPROM(pulseCountAddress);
   }
+}
 
+void setOpeningLimits() {
   // Check that the opening amps fall within the allowable ranges.
   openingAmpLimit = openingAmpLimit < 0.0 ? 0.0 : openingAmpLimit > maxCurrentAmps ? maxCurrentAmps : openingAmpLimit;
   // Calculate opening volt limit
   openingVoltLimit = (openingAmpLimit * 0.05) + motorVoltageMinimum;
 }
 
-void loop() {
-  // Get the millis time for this loop.
-  const unsigned long loopMillis = millis();
-
-  // BATTERY MONITOR
+// --- Loop functions
+void updateBatteryLevel() {
   // Read battery voltage
   float batteryVoltage = analogToVoltage(analogRead(batteryInPin));
   
@@ -167,8 +222,9 @@ void loop() {
   hysteresisCheck(&motorVoltageLimit, batteryVoltage);
   //Serial.print(lightsVoltageLimit.isOn);
   //Serial.println(motorVoltageLimit.isOn);
-  
-  // Handle lights input
+}
+
+void handleLights(unsigned long loopMillis) {
   int lightReading = digitalRead(lightButtonPin);
   
   if (lightReading != lastLightButtonState) {
@@ -177,9 +233,6 @@ void loop() {
   }
   
   if ((loopMillis - lastLightDebounceTime) > debounceDelay) {
-    // whatever the reading is at, it's been there for longer than the debounce
-    // delay, so take it as the actual current state:
-
     // if the button state has changed:
     if (lightReading != lightButtonState) {
       lightButtonState = lightReading;
@@ -198,8 +251,9 @@ void loop() {
   
   // save the reading. Next time through the loop, it'll be the lastButtonState:
   lastLightButtonState = lightReading;
-  
-  // Handle pulse input
+}
+
+void handlePulses(unsigned long loopMillis) {
   int pulseReading = digitalRead(pulsePin);
 
   if (firstLoop) {
@@ -234,8 +288,9 @@ void loop() {
     }
   }
   lastPulseState = pulseReading;
-  
-  // Handle motor input
+}
+
+void handleMotorButtonInput(unsigned long loopMillis) {
   int motorReading = digitalRead(motorButtonPin);
   
   if (motorReading != lastMotorButtonState) {
@@ -244,14 +299,11 @@ void loop() {
   }
   
   if ((loopMillis - lastMotorDebounceTime) > debounceDelay) {
-    // whatever the reading is at, it's been there for longer than the debounce
-    // delay, so take it as the actual current state:
-
     // if the button state has changed:
     if (motorReading != motorButtonState) {
       motorButtonState = motorReading;
 
-      // only toggle the LED if the new button state is HIGH
+      // only update the motor state if the new button state is HIGH
       if (motorButtonState == HIGH) {    
         pulseDetectorStartTime = loopMillis;
 		    switch (motorState) {
@@ -280,8 +332,9 @@ void loop() {
   
   // save the reading. Next time through the loop, it'll be the lastButtonState:
   lastMotorButtonState = motorReading;
-  
-  // Update up/down state based on motor state and input readings
+}
+
+void handleMotorLogic(unsigned long loopMillis) {
   if (motorState == OPENING && (loopMillis - currentMonitorDelayStartTime > currentMonitorDelay + startPulseDetectorDelay)) {
     // When opeing, check against the current
     float currentVoltage = analogToVoltage(analogRead(motorCurrentPin));
@@ -304,8 +357,9 @@ void loop() {
   if (motorState != OPEN) {
     lightState = LOW;
   }
+}
 
-  // Handle reset input
+void handleResetButtonInput(unsigned long loopMillis) {
   int resetReading = digitalRead(pulseResetPin);
   
   if (resetReading != lastResetButtonState) {
@@ -323,26 +377,24 @@ void loop() {
 
       if (resetButtonState == HIGH) {
         pulseCount = 0;
+        motorState = CLOSED;
       }
     }
   }
   
   // save the reading. Next time through the loop, it'll be the lastButtonState:
   lastResetButtonState = resetReading;
-  
-  // OUTPUTS
-  
-  // set the light output
-  digitalWrite(lightOutPin, lightState);
+}
 
-  // set pulse sensor out
+void writePulseDetectorOut(unsigned long loopMillis) {
   if ((motorState == OPENING || motorState == CLOSING) || (loopMillis - pulseDetectorStartTime < pulseDetectorDelay)) {
     digitalWrite(pulseDetectorPin, HIGH);
   } else {
     digitalWrite(pulseDetectorPin, LOW);
   }
-  
-  // set the motor outputs
+}
+
+void writeMotorStateOut(unsigned long loopMillis) {
   switch (motorState) {
     case OPENING:
     digitalWrite(motorUpPin, (loopMillis - pulseDetectorStartTime >= pulseDetectorDelay) ? HIGH : LOW);
@@ -359,13 +411,6 @@ void loop() {
     digitalWrite(motorDownPin, LOW);
     break;
   }
-  
-  // Save the umbrella state and pulse count
-  writeMotorState();
-  writeIntIntoEEPROM(pulseCountAddress, pulseCount);
-
-  // Write to the activity pin
-  digitalWrite(activityPin, getActivity(loopMillis));
 }
 
 // Checks for all possible forms of activity and returns HIGH if any of them are true, otherwise LOW.
@@ -398,7 +443,7 @@ int getActivity(unsigned long loopMillis) {
 }
 
 // Write the motor state to the EEPROM. Optimisted to reduce writes, improving longevity of EEPROM
-void writeMotorState() {
+void saveMotorState() {
   int writeState;
   switch(motorState) {
     case OPEN:
@@ -414,8 +459,10 @@ void writeMotorState() {
       writeState = CLOSED;
       break;
   }
-  writeIntIntoEEPROM(motorStateAddress, writeState);
+  saveIntIntoEEPROM(motorStateAddress, writeState);
 }
+
+// --- Utility functions
 
 // Convert the raw data value (0 - 1023) to voltage (0.0V - voltageLimitV):
 float analogToVoltage(int analogReadValue) {
@@ -433,7 +480,7 @@ void hysteresisCheck(AnalogHysteresis* analogHysteresis, float analogVoltage) {
 
 // For EEPROM notes: https://roboticsbackend.com/arduino-store-int-into-eeprom/
 // Used to write a multi-byte int to EEPROM
-void writeIntIntoEEPROM(int address, int number) { 
+void saveIntIntoEEPROM(int address, int number) { 
   EEPROM.update(address, number >> 8);
   EEPROM.update(address + 1, number & 0xFF);
 }
