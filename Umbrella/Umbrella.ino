@@ -87,8 +87,13 @@ const int activityPin = 4;
 const unsigned long debounceDelay = 50;    // the standard button debounce time
 const unsigned long resetDebounceDelay = 1000;    // the reset button debounce time
 const unsigned long pulseDebounceDelay = 10;    // the debounce time between pulse registers
+const unsigned long powerDebounceDelay = 10;  // delay on powerPin before saving
 
 // EEPROM Stuff
+const int powerPin = 12;			// The pin we listen on for powering off. We must only save to EEPROM when the power goes down.
+unsigned long lastPowerDebounceTime = 0;
+int lastPowerPinState = HIGH;
+int powerPinState = HIGH;
 const int motorStateAddress = 0;
 int firstRunAddress;
 int pulseCountAddress;
@@ -139,8 +144,7 @@ void loop() {
   writeMotorStateOut(loopMillis);
   
   // Save the motor state and pulse count
-  saveMotorState();
-  saveIntIntoEEPROM(pulseCountAddress, pulseCount);
+  handleSaving(loopMillis);
 
   // Write to the activity pin
   digitalWrite(activityPin, getActivity(loopMillis));
@@ -164,6 +168,8 @@ void setupPins() {
   pinMode(pulseDetectorPin, OUTPUT);
 
   pinMode(activityPin, OUTPUT);
+
+  pinMode(powerPin, INPUT);
   
   // Set initial out states
   digitalWrite(lightOutPin, lightState);
@@ -440,6 +446,36 @@ int getActivity(unsigned long loopMillis) {
   }
 
   return LOW;
+}
+
+// Check the powerPin, only save when it is low.
+void handleSaving(unsigned long loopMillis) {
+  int powerPinReading = digitalRead(powerPin);
+  
+  if (powerPinReading != lastPowerPinState) {
+    // reset the debouncing timer
+    lastPowerDebounceTime = loopMillis;
+  }
+  
+  if ((loopMillis - lastPowerDebounceTime) > powerDebounceDelay) {
+    // whatever the reading is at, it's been there for longer than the debounce
+    // delay, so take it as the actual current state:
+
+    // if the button state has changed:
+    if (powerPinState != powerPinReading) {
+      powerPinState = powerPinReading;
+    }
+  }
+
+  // Only save to the EEPROM when the power drops, to extend the like of the EEPROM
+  // As per the documentation, it is only reliable for 100 000 writes. This function should make it last more than long enough for this project.
+  if (powerPinState == LOW) {
+    saveMotorState();
+    saveIntIntoEEPROM(pulseCountAddress, pulseCount);
+  }
+  
+  // save the reading. Next time through the loop, it'll be the lastButtonState:
+  lastPowerPinState = powerPinReading;
 }
 
 // Write the motor state to the EEPROM. Optimisted to reduce writes, improving longevity of EEPROM
