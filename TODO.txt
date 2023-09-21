@@ -1,4 +1,5 @@
 Update up/down input to be disabled for n pulses when opening. Also when closing completes for some duration. TBD
+Updated up/down event when closed so that we dont start closing again.
 
 DONE - Potential additional sensor for closing check. D11 for this, when pulses drop below closing threshold (10 for now), instead wait for this to trigger, then set to closed and reset pulse count.
 DONE - Listen on D12, only save when it turns off. Check EEPROM dieing problem... talk with Fredi and check here: https://forum.arduino.cc/t/eeprom-questions-on-the-100-000-write-limit/273399/25

@@ -208,8 +208,8 @@ void setInitialMotorState() {
     case CLOSING:
       motorState = OPEN_PARTIAL;
       break;
-    default:
-      motorState = CLOSED;
+    case OPENING:
+      motorState = CLOSED_PARTIAL;
       break;
   }
 }
@@ -355,24 +355,27 @@ void handleMotorButtonInput(unsigned long loopMillis) {
         pulseDetectorStartTime = loopMillis;
 		    switch (motorState) {
           case OPENING:
-          motorState = OPEN_PARTIAL;
-          pulseDetectorDelay = stopPulseDetectorDelay;
-          break;
+            motorState = OPEN_PARTIAL;
+            pulseDetectorDelay = stopPulseDetectorDelay;
+            break;
           case OPEN:
           case OPEN_PARTIAL:
-          motorState = CLOSING;
-          pulseDetectorDelay = startPulseDetectorDelay;
-          break;
+            motorState = CLOSING;
+            pulseDetectorDelay = startPulseDetectorDelay;
+            break;
           case CLOSED:
+            if (!motorVoltageLimit.isOn) {
+              break;
+            }
           case CLOSED_PARTIAL:
-          motorState = motorVoltageLimit.isOn ? OPENING : CLOSING;
-          pulseDetectorDelay = startPulseDetectorDelay;
-          currentMonitorDelayStartTime = loopMillis;
-          break;
+            motorState = motorVoltageLimit.isOn ? OPENING : CLOSING;
+            pulseDetectorDelay = startPulseDetectorDelay;
+            currentMonitorDelayStartTime = loopMillis;
+            break;
           case CLOSING:
-          motorState = CLOSED_PARTIAL;
-          pulseDetectorDelay = stopPulseDetectorDelay;
-          break;
+            motorState = CLOSED_PARTIAL;
+            pulseDetectorDelay = stopPulseDetectorDelay;
+            break;
         }
       }
     }
@@ -534,9 +537,10 @@ void saveMotorState() {
     case OPEN_PARTIAL:
       writeState = OPEN_PARTIAL;
       break;
-    case CLOSED:
-    case OPENING:
     case CLOSED_PARTIAL:
+    case OPENING:
+      writeState = CLOSED_PARTIAL;
+    case CLOSED:
     default:
       writeState = CLOSED;
       break;
