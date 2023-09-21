@@ -1,6 +1,5 @@
-Update up/down input to be disabled for n pulses when opening. Also when closing completes for some duration. TBD
-Updated up/down event when closed so that we dont start closing again.
-
+DONE - Update up/down input to be disabled for n pulses when opening. Also when closing completes for some duration. TBD
+DONE - Update up/down event when closed so that we dont start closing again.
 DONE - Potential additional sensor for closing check. D11 for this, when pulses drop below closing threshold (10 for now), instead wait for this to trigger, then set to closed and reset pulse count.
 DONE - Listen on D12, only save when it turns off. Check EEPROM dieing problem... talk with Fredi and check here: https://forum.arduino.cc/t/eeprom-questions-on-the-100-000-write-limit/273399/25
 DONE - Long running millis wrap around problem.
@@ -11,6 +10,7 @@ DONE - Update amp calculation, as per meeting notes and spreadsheet, its madness
 DONE - Add digital out thats on before and after motor turns on (same for up and down)
 DONE - Pulse Count/potential other implementation for determining open/close state
 DONE - De-bounce on manual switch for lights + open/close
+
 No longer implementing - Implement sleep mode - More research/queries needed
 
 DONE - Remove close position calculation based on current sensor

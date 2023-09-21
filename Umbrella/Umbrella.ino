@@ -13,7 +13,8 @@ const float maxCurrentAmps = 15;
 const unsigned long currentMonitorDelay = 600; // Current monitor delay for opening and closing, in milliseconds
 const unsigned long startPulseDetectorDelay = 300; // Delay before starting the motor, when we power on the pulse detector out
 const unsigned long stopPulseDetectorDelay = 1000; // Delay after stopping the motor, when we power off the pulse detector out
-const int pulsesToListenForClosed = 10; // When closing and the pulse count reaches this, listen to the 
+const int pulsesToListenForClosed = 10; // When closing and the pulse count reaches this, listen to the closedPulse instead
+const int minPulsesForInput = 12; // After starting to open pr close, wait for at least this many pulses before allowing the user to stop
 
 float openingVoltLimit; // Calculated in setup: (openingAmpLimit * 0.05) + motorVoltageMinimum
 
@@ -72,6 +73,7 @@ const int pulseDetectorPin = 10;
 // Pulse consts and vars
 const int pulsePin = 9;			// The pin we listen for pulses on
 int pulseCount = 0;
+int pulsesSinceAction = 0;
 unsigned long lastPulseDebounceTime = 0;  // the last time the output pin was toggled
 int pulseState;
 int lastPulseState;
@@ -297,6 +299,7 @@ void handlePulses(unsigned long loopMillis) {
       // If we are in any of the open or opending states, increment the pulses
       // If closing, decrement
       // CLOSED will now only be set when we get a pulse on the closedPulsePin, and the count should not change in this state
+      pulsesSinceAction++; // Always just increment this
       switch (motorState) {
         case OPENING:
         case OPEN:
@@ -350,8 +353,8 @@ void handleMotorButtonInput(unsigned long loopMillis) {
     if (motorReading != motorButtonState) {
       motorButtonState = motorReading;
 
-      // only update the motor state if the new button state is HIGH
-      if (motorButtonState == HIGH) {    
+      // only update the motor state if the new button state is HIGH and we arent in one of the circumstances where input should be ignored
+      if (motorButtonState == HIGH && shouldRegisterInput(loopMillis)) {    
         pulseDetectorStartTime = loopMillis;
 		    switch (motorState) {
           case OPENING:
@@ -360,14 +363,18 @@ void handleMotorButtonInput(unsigned long loopMillis) {
             break;
           case OPEN:
           case OPEN_PARTIAL:
+            pulsesSinceAction = 0;
             motorState = CLOSING;
             pulseDetectorDelay = startPulseDetectorDelay;
             break;
           case CLOSED:
+            // If we the umbrella is currently closed and button is pressed, do nothing.
             if (!motorVoltageLimit.isOn) {
               break;
             }
+            // Otherwise the logic is the same as CLOSED_PARTIAL, so fall through.
           case CLOSED_PARTIAL:
+            pulsesSinceAction = 0;
             motorState = motorVoltageLimit.isOn ? OPENING : CLOSING;
             pulseDetectorDelay = startPulseDetectorDelay;
             currentMonitorDelayStartTime = loopMillis;
@@ -383,6 +390,30 @@ void handleMotorButtonInput(unsigned long loopMillis) {
   
   // save the reading. Next time through the loop, it'll be the lastButtonState:
   lastMotorButtonState = motorReading;
+}
+
+// if the umbrella has been OPENING or CLOSING for less than 12 pulses, ignore.
+// if the state is OPEN, CLOSED, OPEN_PARTIAL or CLOSED_PARTIAL and (loopMillis - pulseDetectorStartTime < pulseDetectorDelay), ignore
+bool shouldRegisterInput(unsigned long loopMillis) {
+  switch (motorState) {
+    case OPENING:
+    case CLOSING:
+      if (pulsesSinceAction < minPulsesForInput) {
+        return false;
+      }
+      break;
+    case OPEN:
+    case CLOSED:
+    case OPEN_PARTIAL:
+    case CLOSED_PARTIAL:
+      if (loopMillis - pulseDetectorStartTime < pulseDetectorDelay) {
+        return false;
+      }
+      break;
+    default:
+      break;
+  }
+  return true;
 }
 
 void handleMotorLogic(unsigned long loopMillis) {
