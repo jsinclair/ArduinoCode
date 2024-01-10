@@ -15,6 +15,7 @@ const unsigned long startPulseDetectorDelay = 300; // Delay before starting the 
 const unsigned long stopPulseDetectorDelay = 1000; // Delay after stopping the motor, when we power off the pulse detector out
 const int pulsesToListenForClosed = 10; // When closing and the pulse count reaches this, listen to the closedPulse instead
 const int minPulsesForInput = 12; // After starting to open pr close, wait for at least this many pulses before allowing the user to stop
+const int maxPulsesForOpening = 150; // If, while opening, the pulse could exceeds this, turn off the motor
 
 float openingVoltLimit; // Calculated in setup: (openingAmpLimit * 0.05) + motorVoltageMinimum
 
@@ -418,10 +419,10 @@ bool shouldRegisterInput(unsigned long loopMillis) {
 
 void handleMotorLogic(unsigned long loopMillis) {
   if (motorState == OPENING && (loopMillis - currentMonitorDelayStartTime > currentMonitorDelay + startPulseDetectorDelay)) {
-    // When opeing, check against the current
+    // When opeing, check that we havent exceeded the opening pulses, then check against the current
     float currentVoltage = analogToVoltage(analogRead(motorCurrentPin));
-    
-    if (currentVoltage >= openingVoltLimit) {
+
+    if (pulseCount >= maxPulsesForOpening || currentVoltage >= openingVoltLimit) {
       motorState = OPEN;
       pulseDetectorStartTime = loopMillis;
       pulseDetectorDelay = stopPulseDetectorDelay;
