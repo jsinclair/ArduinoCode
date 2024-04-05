@@ -20,6 +20,8 @@ const int maxPulsesForOpening = 150; // If, while opening, the pulse could excee
 // Remote Cycling Constants
 const unsigned long remoteOnDuration = 500; // How long the remote output should stay high in a remote cycle
 const unsigned long remoteOffDuration = 2500; // How long the remote output should stay low in a remote cycle
+// Inrush Limiter Contants
+const unsigned long inrushLimiterDelay = 500;
 
 float openingVoltLimit; // Calculated in setup: (openingAmpLimit * voltsPerAmp) + motorVoltageMinimum
 
@@ -103,6 +105,9 @@ unsigned long currentRemoteCycleDuration = remoteOnDuration;
 unsigned long lastRemoteCycleTime = 0;  // the last time the output pin was toggled
 bool remoteState = HIGH;
 
+// Inrush Limiter
+const int inrushPin = 1; // Output pin for the inrush detector
+
 // Other consts and vars
 const unsigned long debounceDelay = 50;    // the standard button debounce time
 const unsigned long resetDebounceDelay = 1000;    // the reset button debounce time
@@ -180,6 +185,9 @@ void loop() {
   // Write to the remote pin
   digitalWrite(remotePin, remoteState);
 
+  // set the inrush state
+  writeInrushStateOut(loopMillis);
+
   if (firstLoop) {
     firstLoop = false;
   }
@@ -209,6 +217,8 @@ void setupPins() {
 
   pinMode(remotePin, OUTPUT);
   
+  pinMode(inrushPin, OUTPUT);
+  
   // Set initial out states
   digitalWrite(lightOutPin, lightState);
   digitalWrite(motorUpPin, LOW);
@@ -216,6 +226,7 @@ void setupPins() {
   digitalWrite(pulseDetectorPin, LOW);
   digitalWrite(activityPin, HIGH);
   digitalWrite(remotePin, remoteState);
+  digitalWrite(inrushPin, LOW);
 }
 
 void setInitialMotorState() {
@@ -504,6 +515,18 @@ void handleRemoteCycle(unsigned long loopMillis) {
       remoteState = HIGH;
       currentRemoteCycleDuration = remoteOnDuration;
     }
+  }
+}
+
+void writeInrushStateOut(unsigned long loopMillis) {
+  switch (motorState) {
+    case OPENING:
+    case CLOSING:
+      digitalWrite(inrushPin, (loopMillis - pulseDetectorStartTime >= pulseDetectorDelay + inrushLimiterDelay) ? HIGH : LOW);
+      break;
+    default:
+      digitalWrite(inrushPin, LOW);
+      break;
   }
 }
 
