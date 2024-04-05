@@ -6,10 +6,11 @@ const float batteryMotorLimitOnValue = 3.0;
 const float batteryLightLimitOffValue = 2.75; // Battery threshold for the lights.
 const float batteryLightLimitOnValue = 2.9;
 // Constants for opening and closing the umbrella
-float openingAmpLimit = 7.0; // the nnA for the opening current limit. Allowable range: 0.0 - maxCurrentAmps
+float openingAmpLimit = 10.0; // the nnA for the opening current limit. Allowable range: 0.0 - maxCurrentAmps
 const float voltageLimit = 3.3; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
-const float motorVoltageMinimum = 1.25; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
+const float motorVoltageMinimum = 1.65; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
 const float maxCurrentAmps = 15;
+const float voltsPerAmp = 0.132; // Used with openingAmpLimit to work out the opening volt limit
 const unsigned long currentMonitorDelay = 600; // Current monitor delay for opening and closing, in milliseconds
 const unsigned long startPulseDetectorDelay = 300; // Delay before starting the motor, when we power on the pulse detector out
 const unsigned long stopPulseDetectorDelay = 1000; // Delay after stopping the motor, when we power off the pulse detector out
@@ -17,7 +18,7 @@ const int pulsesToListenForClosed = 10; // When closing and the pulse count reac
 const int minPulsesForInput = 12; // After starting to open pr close, wait for at least this many pulses before allowing the user to stop
 const int maxPulsesForOpening = 150; // If, while opening, the pulse could exceeds this, turn off the motor
 
-float openingVoltLimit; // Calculated in setup: (openingAmpLimit * 0.05) + motorVoltageMinimum
+float openingVoltLimit; // Calculated in setup: (openingAmpLimit * voltsPerAmp) + motorVoltageMinimum
 
 // Hysteresis struct to manage the various thresholds
 struct AnalogHysteresis {
@@ -214,6 +215,8 @@ void setInitialMotorState() {
     case OPENING:
       motorState = CLOSED_PARTIAL;
       break;
+    default:
+      motorState = CLOSED;
   }
 }
 
@@ -236,7 +239,7 @@ void setOpeningLimits() {
   // Check that the opening amps fall within the allowable ranges.
   openingAmpLimit = openingAmpLimit < 0.0 ? 0.0 : openingAmpLimit > maxCurrentAmps ? maxCurrentAmps : openingAmpLimit;
   // Calculate opening volt limit
-  openingVoltLimit = (openingAmpLimit * 0.05) + motorVoltageMinimum;
+  openingVoltLimit = (openingAmpLimit * voltsPerAmp) + motorVoltageMinimum;
 }
 
 // --- Loop functions
@@ -282,6 +285,7 @@ void handleLights(unsigned long loopMillis) {
 
 void handlePulses(unsigned long loopMillis) {
   int pulseReading = digitalRead(pulsePin);
+  //Serial.println(pulseReading);
 
   if (firstLoop) {
     pulseState = pulseReading;
@@ -348,7 +352,7 @@ void handleMotorButtonInput(unsigned long loopMillis) {
     // reset the debouncing timer
     lastMotorDebounceTime = loopMillis;
   }
-  
+
   if ((loopMillis - lastMotorDebounceTime) > debounceDelay) {
     // if the button state has changed:
     if (motorReading != motorButtonState) {
@@ -397,12 +401,13 @@ void handleMotorButtonInput(unsigned long loopMillis) {
 // if the state is OPEN, CLOSED, OPEN_PARTIAL or CLOSED_PARTIAL and (loopMillis - pulseDetectorStartTime < pulseDetectorDelay), ignore
 bool shouldRegisterInput(unsigned long loopMillis) {
   switch (motorState) {
-    case OPENING:
-    case CLOSING:
-      if (pulsesSinceAction < minPulsesForInput) {
-        return false;
-      }
-      break;
+    // Commented out the OPENING and CLOSING cases because we couldnt remember why we put this in, and if the pulses stop working it will open forever.
+    // case OPENING:
+    // case CLOSING:
+    //   if (pulsesSinceAction < minPulsesForInput) {
+    //     return false;
+    //   }
+    //   break;
     case OPEN:
     case CLOSED:
     case OPEN_PARTIAL:
