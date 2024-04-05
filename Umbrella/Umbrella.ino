@@ -17,6 +17,9 @@ const unsigned long stopPulseDetectorDelay = 1000; // Delay after stopping the m
 const int pulsesToListenForClosed = 10; // When closing and the pulse count reaches this, listen to the closedPulse instead
 const int minPulsesForInput = 12; // After starting to open pr close, wait for at least this many pulses before allowing the user to stop
 const int maxPulsesForOpening = 150; // If, while opening, the pulse could exceeds this, turn off the motor
+// Remote Cycling Constants
+const unsigned long remoteOnDuration = 500; // How long the remote output should stay high in a remote cycle
+const unsigned long remoteOffDuration = 2500; // How long the remote output should stay low in a remote cycle
 
 float openingVoltLimit; // Calculated in setup: (openingAmpLimit * voltsPerAmp) + motorVoltageMinimum
 
@@ -94,6 +97,12 @@ unsigned long lastResetDebounceTime = 0;  // the last time the output pin was to
 // Activity indicator consts and vars
 const int activityPin = 4;
 
+// Remote Cycling
+const int remotePin = 13; // Output pin for the remote state
+unsigned long currentRemoteCycleDuration = remoteOnDuration;
+unsigned long lastRemoteCycleTime = 0;  // the last time the output pin was toggled
+bool remoteState = HIGH;
+
 // Other consts and vars
 const unsigned long debounceDelay = 50;    // the standard button debounce time
 const unsigned long resetDebounceDelay = 1000;    // the reset button debounce time
@@ -147,6 +156,9 @@ void loop() {
 
   // Handle reset input
   handleResetButtonInput(loopMillis);
+
+  // Handle the remote state change
+  handleRemoteCycle(loopMillis);
   
   // OUTPUTS
   
@@ -164,6 +176,9 @@ void loop() {
 
   // Write to the activity pin
   digitalWrite(activityPin, getActivity(loopMillis));
+
+  // Write to the remote pin
+  digitalWrite(remotePin, remoteState);
 
   if (firstLoop) {
     firstLoop = false;
@@ -191,6 +206,8 @@ void setupPins() {
   pinMode(activityPin, OUTPUT);
 
   pinMode(powerPin, INPUT);
+
+  pinMode(remotePin, OUTPUT);
   
   // Set initial out states
   digitalWrite(lightOutPin, lightState);
@@ -198,6 +215,7 @@ void setupPins() {
   digitalWrite(motorDownPin, LOW);
   digitalWrite(pulseDetectorPin, LOW);
   digitalWrite(activityPin, HIGH);
+  digitalWrite(remotePin, remoteState);
 }
 
 void setInitialMotorState() {
@@ -474,6 +492,19 @@ void handleResetButtonInput(unsigned long loopMillis) {
   
   // save the reading. Next time through the loop, it'll be the lastButtonState:
   lastResetButtonState = resetReading;
+}
+
+void handleRemoteCycle(unsigned long loopMillis) {
+  if (loopMillis - lastRemoteCycleTime > currentRemoteCycleDuration) {
+    lastRemoteCycleTime = loopMillis;
+    if (remoteState == HIGH) {
+      remoteState = LOW;
+      currentRemoteCycleDuration = remoteOffDuration;
+    } else {
+      remoteState = HIGH;
+      currentRemoteCycleDuration = remoteOnDuration;
+    }
+  }
 }
 
 void writePulseDetectorOut(unsigned long loopMillis) {
