@@ -100,13 +100,13 @@ unsigned long lastResetDebounceTime = 0;  // the last time the output pin was to
 const int activityPin = 4;
 
 // Remote Cycling
-const int remotePin = 13; // Output pin for the remote state
+const int remotePin = 12; // Output pin for the remote state
 unsigned long currentRemoteCycleDuration = remoteOnDuration;
 unsigned long lastRemoteCycleTime = 0;  // the last time the output pin was toggled
 bool remoteState = HIGH;
 
 // Inrush Limiter
-const int inrushPin = 1; // Output pin for the inrush detector
+const int inrushPin = 13; // Output pin for the inrush detector
 
 // Other consts and vars
 const unsigned long debounceDelay = 50;    // the standard button debounce time
@@ -117,10 +117,6 @@ const unsigned long powerDebounceDelay = 10;  // delay on powerPin before saving
 bool firstLoop = true;
 
 // EEPROM Stuff
-const int powerPin = 12;			// The pin we listen on for powering off. We must only save to EEPROM when the power goes down.
-unsigned long lastPowerDebounceTime = 0;
-int lastPowerPinState = HIGH;
-int powerPinState = HIGH;
 const int motorStateAddress = 0;
 int firstRunAddress;
 int pulseCountAddress;
@@ -138,32 +134,29 @@ void setup() {
 }
 
 void loop() {
-  // Get the millis time for this loop.
-  const unsigned long loopMillis = millis();
-
   // BATTERY MONITOR
   updateBatteryLevel();
   
   // Handle lights input
-  handleLights(loopMillis);
+  handleLights();
   
   // Handle pulse input
-  handlePulses(loopMillis);
+  handlePulses();
 
   // Read in the state of the closedPulsPin
-  readClosedPulse(loopMillis);
+  readClosedPulse();
   
   // Handle motor input
-  handleMotorButtonInput(loopMillis);
+  handleMotorButtonInput();
   
   // Update up/down state based on motor state and input readings
-  handleMotorLogic(loopMillis);
+  handleMotorLogic();
 
   // Handle reset input
-  handleResetButtonInput(loopMillis);
+  handleResetButtonInput();
 
   // Handle the remote state change
-  handleRemoteCycle(loopMillis);
+  handleRemoteCycle();
   
   // OUTPUTS
   
@@ -171,22 +164,22 @@ void loop() {
   digitalWrite(lightOutPin, lightState);
 
   // set pulse sensor out
-  writePulseDetectorOut(loopMillis);
+  writePulseDetectorOut();
   
   // set the motor outputs
-  writeMotorStateOut(loopMillis);
+  writeMotorStateOut();
   
   // Save the motor state and pulse count
-  handleSaving(loopMillis);
+  handleSaving();
 
   // Write to the activity pin
-  digitalWrite(activityPin, getActivity(loopMillis));
+  digitalWrite(activityPin, getActivity());
 
   // Write to the remote pin
   digitalWrite(remotePin, remoteState);
 
   // set the inrush state
-  writeInrushStateOut(loopMillis);
+  writeInrushStateOut();
 
   if (firstLoop) {
     firstLoop = false;
@@ -212,8 +205,6 @@ void setupPins() {
   pinMode(pulseDetectorPin, OUTPUT);
 
   pinMode(activityPin, OUTPUT);
-
-  pinMode(powerPin, INPUT);
 
   pinMode(remotePin, OUTPUT);
   
@@ -283,15 +274,15 @@ void updateBatteryLevel() {
   //Serial.println(motorVoltageLimit.isOn);
 }
 
-void handleLights(unsigned long loopMillis) {
+void handleLights() {
   int lightReading = digitalRead(lightButtonPin);
   
   if (lightReading != lastLightButtonState) {
     // reset the debouncing timer
-    lastLightDebounceTime = loopMillis;
+    lastLightDebounceTime = millis();
   }
   
-  if ((loopMillis - lastLightDebounceTime) > debounceDelay) {
+  if ((millis() - lastLightDebounceTime) > debounceDelay) {
     // if the button state has changed:
     if (lightReading != lightButtonState) {
       lightButtonState = lightReading;
@@ -312,7 +303,7 @@ void handleLights(unsigned long loopMillis) {
   lastLightButtonState = lightReading;
 }
 
-void handlePulses(unsigned long loopMillis) {
+void handlePulses() {
   int pulseReading = digitalRead(pulsePin);
   //Serial.println(pulseReading);
 
@@ -322,10 +313,10 @@ void handlePulses(unsigned long loopMillis) {
   }
   
   if (pulseReading != lastPulseState) {
-    lastPulseDebounceTime = loopMillis;
+    lastPulseDebounceTime = millis();
   }
 
-  if ((loopMillis - lastPulseDebounceTime) >= pulseDebounceDelay) {
+  if ((millis() - lastPulseDebounceTime) >= pulseDebounceDelay) {
     // if the input state has changed:
     if (pulseReading != pulseState) {
       pulseState = pulseReading;
@@ -353,7 +344,7 @@ void handlePulses(unsigned long loopMillis) {
   lastPulseState = pulseReading;
 }
 
-void readClosedPulse(unsigned long loopMillis) {
+void readClosedPulse() {
   int closedPulseReading = digitalRead(closedPulsePin);
 
   if (firstLoop) {
@@ -362,10 +353,10 @@ void readClosedPulse(unsigned long loopMillis) {
   }
   
   if (closedPulseReading != lastClosedPulseState) {
-    lastClosedPulseDebounceTime = loopMillis;
+    lastClosedPulseDebounceTime = millis();
   }
 
-  if ((loopMillis - lastClosedPulseDebounceTime) >= pulseDebounceDelay) {
+  if ((millis() - lastClosedPulseDebounceTime) >= pulseDebounceDelay) {
     // if the input state has changed:
     if (closedPulseReading != closedPulseState) {
       closedPulseState = closedPulseReading;
@@ -374,22 +365,22 @@ void readClosedPulse(unsigned long loopMillis) {
   lastClosedPulseState = closedPulseReading;
 }
 
-void handleMotorButtonInput(unsigned long loopMillis) {
+void handleMotorButtonInput() {
   int motorReading = digitalRead(motorButtonPin);
   
   if (motorReading != lastMotorButtonState) {
     // reset the debouncing timer
-    lastMotorDebounceTime = loopMillis;
+    lastMotorDebounceTime = millis();
   }
 
-  if ((loopMillis - lastMotorDebounceTime) > debounceDelay) {
+  if ((millis() - lastMotorDebounceTime) > debounceDelay) {
     // if the button state has changed:
     if (motorReading != motorButtonState) {
       motorButtonState = motorReading;
 
       // only update the motor state if the new button state is HIGH and we arent in one of the circumstances where input should be ignored
-      if (motorButtonState == HIGH && shouldRegisterInput(loopMillis)) {    
-        pulseDetectorStartTime = loopMillis;
+      if (motorButtonState == HIGH && shouldRegisterInput()) {    
+        pulseDetectorStartTime = millis();
 		    switch (motorState) {
           case OPENING:
             motorState = OPEN_PARTIAL;
@@ -411,7 +402,7 @@ void handleMotorButtonInput(unsigned long loopMillis) {
             pulsesSinceAction = 0;
             motorState = motorVoltageLimit.isOn ? OPENING : CLOSING;
             pulseDetectorDelay = startPulseDetectorDelay;
-            currentMonitorDelayStartTime = loopMillis;
+            currentMonitorDelayStartTime = millis();
             break;
           case CLOSING:
             motorState = CLOSED_PARTIAL;
@@ -428,7 +419,7 @@ void handleMotorButtonInput(unsigned long loopMillis) {
 
 // if the umbrella has been OPENING or CLOSING for less than 12 pulses, ignore.
 // if the state is OPEN, CLOSED, OPEN_PARTIAL or CLOSED_PARTIAL and (loopMillis - pulseDetectorStartTime < pulseDetectorDelay), ignore
-bool shouldRegisterInput(unsigned long loopMillis) {
+bool shouldRegisterInput() {
   switch (motorState) {
     // Commented out the OPENING and CLOSING cases because we couldnt remember why we put this in, and if the pulses stop working it will open forever.
     // case OPENING:
@@ -441,7 +432,7 @@ bool shouldRegisterInput(unsigned long loopMillis) {
     case CLOSED:
     case OPEN_PARTIAL:
     case CLOSED_PARTIAL:
-      if (loopMillis - pulseDetectorStartTime < pulseDetectorDelay) {
+      if (millis() - pulseDetectorStartTime < pulseDetectorDelay) {
         return false;
       }
       break;
@@ -451,14 +442,14 @@ bool shouldRegisterInput(unsigned long loopMillis) {
   return true;
 }
 
-void handleMotorLogic(unsigned long loopMillis) {
-  if (motorState == OPENING && (loopMillis - currentMonitorDelayStartTime > currentMonitorDelay + startPulseDetectorDelay)) {
+void handleMotorLogic() {
+  if (motorState == OPENING && (millis() - currentMonitorDelayStartTime > currentMonitorDelay + startPulseDetectorDelay)) {
     // When opeing, check that we havent exceeded the opening pulses, then check against the current
     float currentVoltage = analogToVoltage(analogRead(motorCurrentPin));
 
     if (pulseCount >= maxPulsesForOpening || currentVoltage >= openingVoltLimit) {
       motorState = OPEN;
-      pulseDetectorStartTime = loopMillis;
+      pulseDetectorStartTime = millis();
       pulseDetectorDelay = stopPulseDetectorDelay;
     }
   }
@@ -468,7 +459,7 @@ void handleMotorLogic(unsigned long loopMillis) {
     if (pulseCount <= pulsesToListenForClosed && closedPulseState == HIGH) {
       motorState = CLOSED;
       pulseCount = 0;
-      pulseDetectorStartTime = loopMillis;
+      pulseDetectorStartTime = millis();
       pulseDetectorDelay = stopPulseDetectorDelay;
     }
   }
@@ -478,15 +469,15 @@ void handleMotorLogic(unsigned long loopMillis) {
   }
 }
 
-void handleResetButtonInput(unsigned long loopMillis) {
+void handleResetButtonInput() {
   int resetReading = digitalRead(pulseResetPin);
   
   if (resetReading != lastResetButtonState) {
     // reset the debouncing timer
-    lastResetDebounceTime = loopMillis;
+    lastResetDebounceTime = millis();
   }
   
-  if ((loopMillis - lastResetDebounceTime) > resetDebounceDelay) {
+  if ((millis() - lastResetDebounceTime) > resetDebounceDelay) {
     // whatever the reading is at, it's been there for longer than the debounce
     // delay, so take it as the actual current state:
 
@@ -505,9 +496,9 @@ void handleResetButtonInput(unsigned long loopMillis) {
   lastResetButtonState = resetReading;
 }
 
-void handleRemoteCycle(unsigned long loopMillis) {
-  if (loopMillis - lastRemoteCycleTime > currentRemoteCycleDuration) {
-    lastRemoteCycleTime = loopMillis;
+void handleRemoteCycle() {
+  if (millis() - lastRemoteCycleTime > currentRemoteCycleDuration) {
+    lastRemoteCycleTime = millis();
     if (remoteState == HIGH) {
       remoteState = LOW;
       currentRemoteCycleDuration = remoteOffDuration;
@@ -518,11 +509,11 @@ void handleRemoteCycle(unsigned long loopMillis) {
   }
 }
 
-void writeInrushStateOut(unsigned long loopMillis) {
+void writeInrushStateOut() {
   switch (motorState) {
     case OPENING:
     case CLOSING:
-      digitalWrite(inrushPin, (loopMillis - pulseDetectorStartTime >= pulseDetectorDelay + inrushLimiterDelay) ? HIGH : LOW);
+      digitalWrite(inrushPin, (millis() - pulseDetectorStartTime >= pulseDetectorDelay + inrushLimiterDelay) ? HIGH : LOW);
       break;
     default:
       digitalWrite(inrushPin, LOW);
@@ -530,23 +521,23 @@ void writeInrushStateOut(unsigned long loopMillis) {
   }
 }
 
-void writePulseDetectorOut(unsigned long loopMillis) {
-  if ((motorState == OPENING || motorState == CLOSING) || (loopMillis - pulseDetectorStartTime < pulseDetectorDelay)) {
+void writePulseDetectorOut() {
+  if ((motorState == OPENING || motorState == CLOSING) || (millis() - pulseDetectorStartTime < pulseDetectorDelay)) {
     digitalWrite(pulseDetectorPin, HIGH);
   } else {
     digitalWrite(pulseDetectorPin, LOW);
   }
 }
 
-void writeMotorStateOut(unsigned long loopMillis) {
+void writeMotorStateOut() {
   switch (motorState) {
     case OPENING:
-      digitalWrite(motorUpPin, (loopMillis - pulseDetectorStartTime >= pulseDetectorDelay) ? HIGH : LOW);
+      digitalWrite(motorUpPin, (millis() - pulseDetectorStartTime >= pulseDetectorDelay) ? HIGH : LOW);
       digitalWrite(motorDownPin, LOW);
       break;
     case CLOSING:
       digitalWrite(motorUpPin, LOW);
-      digitalWrite(motorDownPin, (loopMillis - pulseDetectorStartTime >= pulseDetectorDelay) ? HIGH : LOW);
+      digitalWrite(motorDownPin, (millis() - pulseDetectorStartTime >= pulseDetectorDelay) ? HIGH : LOW);
       break;
     case OPEN:
     case OPEN_PARTIAL:
@@ -559,7 +550,7 @@ void writeMotorStateOut(unsigned long loopMillis) {
 }
 
 // Checks for all possible forms of activity and returns HIGH if any of them are true, otherwise LOW.
-int getActivity(unsigned long loopMillis) {
+int getActivity() {
   // Check light state
   if (lightState == HIGH) {
     return HIGH;
@@ -572,15 +563,15 @@ int getActivity(unsigned long loopMillis) {
 
   // check button debounces
   if (
-    ((loopMillis - lastResetDebounceTime) <= resetDebounceDelay && lastResetButtonState == HIGH) ||
-    ((loopMillis - lastMotorDebounceTime) <= debounceDelay && lastMotorButtonState == HIGH) ||
-    ((loopMillis - lastLightDebounceTime) <= debounceDelay && lastLightButtonState == HIGH)
+    ((millis() - lastResetDebounceTime) <= resetDebounceDelay && lastResetButtonState == HIGH) ||
+    ((millis() - lastMotorDebounceTime) <= debounceDelay && lastMotorButtonState == HIGH) ||
+    ((millis() - lastLightDebounceTime) <= debounceDelay && lastLightButtonState == HIGH)
   ) {
     return HIGH;
   }
 
   // check sensor timer
-  if (loopMillis - pulseDetectorStartTime < pulseDetectorDelay) {
+  if (millis() - pulseDetectorStartTime < pulseDetectorDelay) {
     return HIGH;
   }
 
@@ -588,33 +579,16 @@ int getActivity(unsigned long loopMillis) {
 }
 
 // Check the powerPin, only save when it is low.
-void handleSaving(unsigned long loopMillis) {
-  int powerPinReading = digitalRead(powerPin);
-  
-  if (powerPinReading != lastPowerPinState) {
-    // reset the debouncing timer
-    lastPowerDebounceTime = loopMillis;
-  }
-  
-  if ((loopMillis - lastPowerDebounceTime) > powerDebounceDelay) {
-    // whatever the reading is at, it's been there for longer than the debounce
-    // delay, so take it as the actual current state:
+void handleSaving() {
+  // Read battery voltage
+  float batteryVoltage = analogToVoltage(analogRead(batteryInPin));
 
-    // if the button state has changed:
-    if (powerPinState != powerPinReading) {
-      powerPinState = powerPinReading;
-    }
-  }
-
-  // Only save to the EEPROM when the power drops, to extend the like of the EEPROM
+  // Only save to the EEPROM when the power drops, to extend the life of the EEPROM
   // As per the documentation, it is only reliable for 100 000 writes. This function should make it last more than long enough for this project.
-  if (powerPinState == LOW) {
+  if (batteryVoltage <= 0.5) {
     saveMotorState();
     saveIntIntoEEPROM(pulseCountAddress, pulseCount);
   }
-  
-  // save the reading. Next time through the loop, it'll be the lastButtonState:
-  lastPowerPinState = powerPinReading;
 }
 
 // Write the motor state to the EEPROM. Optimisted to reduce writes, improving longevity of EEPROM
