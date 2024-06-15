@@ -6,22 +6,24 @@ const float batteryMotorLimitOnValue = 3.0;
 const float batteryLightLimitOffValue = 2.75; // Battery threshold for the lights.
 const float batteryLightLimitOnValue = 2.9;
 // Constants for opening and closing the umbrella
-float openingAmpLimit = 10.0; // the nnA for the opening current limit. Allowable range: 0.0 - maxCurrentAmps
+float openingAmpLimit = 7.0; // the nnA for the opening current limit. Allowable range: 0.0 - maxCurrentAmps
 const float voltageLimit = 3.3; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
-const float motorVoltageMinimum = 1.65; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
-const float maxCurrentAmps = 15;
-const float voltsPerAmp = 0.132; // Used with openingAmpLimit to work out the opening volt limit
+const float motorVoltageMinimum = 2.5; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
+const float maxCurrentAmps = 8;
+const float voltsPerAmp = 0.1; // Used with openingAmpLimit to work out the opening volt limit
 const unsigned long currentMonitorDelay = 600; // Current monitor delay for opening and closing, in milliseconds
 const unsigned long startPulseDetectorDelay = 300; // Delay before starting the motor, when we power on the pulse detector out
 const unsigned long stopPulseDetectorDelay = 1000; // Delay after stopping the motor, when we power off the pulse detector out
 const int pulsesToListenForClosed = 10; // When closing and the pulse count reaches this, listen to the closedPulse instead
 const int minPulsesForInput = 12; // After starting to open pr close, wait for at least this many pulses before allowing the user to stop
-const int maxPulsesForOpening = 150; // If, while opening, the pulse could exceeds this, turn off the motor
+const int maxPulsesForOpening = 300; // If, while opening, the pulse could exceeds this, turn off the motor
+const unsigned long pulseDebounceDelay = 10;    // the debounce time between pulse registers
 // Remote Cycling Constants
 const unsigned long remoteOnDuration = 500; // How long the remote output should stay high in a remote cycle
 const unsigned long remoteOffDuration = 2500; // How long the remote output should stay low in a remote cycle
 // Inrush Limiter Contants
 const unsigned long inrushLimiterDelay = 500;
+const float savingVoltageThreshold = 3.0;
 
 float openingVoltLimit; // Calculated in setup: (openingAmpLimit * voltsPerAmp) + motorVoltageMinimum
 
@@ -111,7 +113,6 @@ const int inrushPin = 13; // Output pin for the inrush detector
 // Other consts and vars
 const unsigned long debounceDelay = 50;    // the standard button debounce time
 const unsigned long resetDebounceDelay = 1000;    // the reset button debounce time
-const unsigned long pulseDebounceDelay = 10;    // the debounce time between pulse registers
 const unsigned long powerDebounceDelay = 10;  // delay on powerPin before saving
 
 bool firstLoop = true;
@@ -120,6 +121,9 @@ bool firstLoop = true;
 const int motorStateAddress = 0;
 int firstRunAddress;
 int pulseCountAddress;
+
+// Used to try and establish a fixed starting point wwhen opening.
+bool pulseRequired = false;
 
 void setup() {
   setupPins();
@@ -136,51 +140,36 @@ void setup() {
 void loop() {
   // BATTERY MONITOR
   updateBatteryLevel();
-  
   // Handle lights input
   handleLights();
-  
   // Handle pulse input
   handlePulses();
-
   // Read in the state of the closedPulsPin
   readClosedPulse();
-  
   // Handle motor input
   handleMotorButtonInput();
-  
   // Update up/down state based on motor state and input readings
   handleMotorLogic();
-
   // Handle reset input
   handleResetButtonInput();
-
   // Handle the remote state change
   handleRemoteCycle();
-  
   // OUTPUTS
   
   // set the light output
   digitalWrite(lightOutPin, lightState);
-
   // set pulse sensor out
   writePulseDetectorOut();
-  
   // set the motor outputs
   writeMotorStateOut();
-  
   // Save the motor state and pulse count
   handleSaving();
-
   // Write to the activity pin
   digitalWrite(activityPin, getActivity());
-
   // Write to the remote pin
   digitalWrite(remotePin, remoteState);
-
   // set the inrush state
   writeInrushStateOut();
-
   if (firstLoop) {
     firstLoop = false;
   }
@@ -224,8 +213,8 @@ void setInitialMotorState() {
   // Configure the initial umbrella state, reading from the EEPROM.
   motorState = readIntFromEEPROM(motorStateAddress);
   switch(motorState) {
-    case OPEN:
     case CLOSED:
+    case OPEN:
     case OPEN_PARTIAL:
     case CLOSED_PARTIAL:
       break;
@@ -238,6 +227,7 @@ void setInitialMotorState() {
     default:
       motorState = CLOSED;
   }
+  pulseRequired = (motorState == CLOSED);
 }
 
 void setInitialPulseCount() {
@@ -270,8 +260,6 @@ void updateBatteryLevel() {
   // Check the battery level
   hysteresisCheck(&lightsVoltageLimit, batteryVoltage);
   hysteresisCheck(&motorVoltageLimit, batteryVoltage);
-  //Serial.print(lightsVoltageLimit.isOn);
-  //Serial.println(motorVoltageLimit.isOn);
 }
 
 void handleLights() {
@@ -305,7 +293,6 @@ void handleLights() {
 
 void handlePulses() {
   int pulseReading = digitalRead(pulsePin);
-  //Serial.println(pulseReading);
 
   if (firstLoop) {
     pulseState = pulseReading;
@@ -320,7 +307,7 @@ void handlePulses() {
     // if the input state has changed:
     if (pulseReading != pulseState) {
       pulseState = pulseReading;
-
+      
       // If we are in any of the open or opending states, increment the pulses
       // If closing, decrement
       // CLOSED will now only be set when we get a pulse on the closedPulsePin, and the count should not change in this state
@@ -329,7 +316,9 @@ void handlePulses() {
         case OPENING:
         case OPEN:
         case OPEN_PARTIAL:
-          pulseCount += 1;
+          if (!pulseRequired) {
+            pulseCount += 1;
+          }
           break;
         case CLOSING:
         case CLOSED_PARTIAL:
@@ -338,7 +327,6 @@ void handlePulses() {
         default:
           break;
       }
-      //Serial.println(pulseCount);
     }
   }
   lastPulseState = pulseReading;
@@ -360,6 +348,9 @@ void readClosedPulse() {
     // if the input state has changed:
     if (closedPulseReading != closedPulseState) {
       closedPulseState = closedPulseReading;
+      if (pulseRequired && closedPulseState == HIGH) {
+        pulseRequired = false;
+      }
     }
   }
   lastClosedPulseState = closedPulseReading;
@@ -397,6 +388,7 @@ void handleMotorButtonInput() {
             if (!motorVoltageLimit.isOn) {
               break;
             }
+            pulseRequired = true;
             // Otherwise the logic is the same as CLOSED_PARTIAL, so fall through.
           case CLOSED_PARTIAL:
             pulsesSinceAction = 0;
@@ -421,13 +413,12 @@ void handleMotorButtonInput() {
 // if the state is OPEN, CLOSED, OPEN_PARTIAL or CLOSED_PARTIAL and (loopMillis - pulseDetectorStartTime < pulseDetectorDelay), ignore
 bool shouldRegisterInput() {
   switch (motorState) {
-    // Commented out the OPENING and CLOSING cases because we couldnt remember why we put this in, and if the pulses stop working it will open forever.
-    // case OPENING:
-    // case CLOSING:
-    //   if (pulsesSinceAction < minPulsesForInput) {
-    //     return false;
-    //   }
-    //   break;
+    case OPENING:
+    case CLOSING:
+      if (pulsesSinceAction < minPulsesForInput) {
+        return false;
+      }
+      break;
     case OPEN:
     case CLOSED:
     case OPEN_PARTIAL:
@@ -446,7 +437,6 @@ void handleMotorLogic() {
   if (motorState == OPENING && (millis() - currentMonitorDelayStartTime > currentMonitorDelay + startPulseDetectorDelay)) {
     // When opeing, check that we havent exceeded the opening pulses, then check against the current
     float currentVoltage = analogToVoltage(analogRead(motorCurrentPin));
-
     if (pulseCount >= maxPulsesForOpening || currentVoltage >= openingVoltLimit) {
       motorState = OPEN;
       pulseDetectorStartTime = millis();
@@ -582,10 +572,10 @@ int getActivity() {
 void handleSaving() {
   // Read battery voltage
   float batteryVoltage = analogToVoltage(analogRead(batteryInPin));
-
+  
   // Only save to the EEPROM when the power drops, to extend the life of the EEPROM
   // As per the documentation, it is only reliable for 100 000 writes. This function should make it last more than long enough for this project.
-  if (batteryVoltage <= 0.5) {
+  if (batteryVoltage <= savingVoltageThreshold) {
     saveMotorState();
     saveIntIntoEEPROM(pulseCountAddress, pulseCount);
   }
