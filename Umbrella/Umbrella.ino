@@ -7,12 +7,13 @@ const float batteryLightLimitOffValue = 2.75; // Battery threshold for the light
 const float batteryLightLimitOnValue = 2.9;
 // Constants for opening and closing the umbrella
 float openingAmpLimit = 7.0; // the nnA for the opening current limit. Allowable range: 0.0 - maxCurrentAmps
-float closingAmpLimit = 7.0; // the nnA for the opening current limit. Allowable range: 0.0 - maxCurrentAmps
-float closingMinimumAmpLimit = 1.0; // the nnA for the opening current limit. Allowable range: 0.0 - maxCurrentAmps
+float closingAmpLimit = 7.0; // the nnA for the closing current limit. Allowable range: 0.0 - maxCurrentAmps
+float closingMinimumAmpLimit = 0.0; // the minimum nnA for the closing current. Allowable range: 0.0 - maxCurrentAmps
 const float voltageLimit = 3.3; // change this for the different arduinos, 3.3 for mini, 5.0 for nano
 const float motorVoltageMinimum = 2.5; // This is used as the minimum voltage when reading motor current, to compensate for the base amount of 2.5 volts.
-const float maxCurrentAmps = 8;
-const float voltsPerAmp = 0.1; // Used with openingAmpLimit to work out the opening volt limit
+const float maxCurrentAmps = 10;
+const float voltsPerAmp = 0.185; // Used with openingAmpLimit to work out the opening volt limit
+const float dividerFactor = 0.687; // Modifer to opening and closing limits
 const unsigned long currentMonitorDelay = 600; // Current monitor delay for opening and closing, in milliseconds
 // Remote Cycling Constants
 const unsigned long remoteOnDuration = 500; // How long the remote output should stay high in a remote cycle
@@ -93,7 +94,7 @@ const unsigned long debounceDelay = 50;    // the standard button debounce time
 
 // EEPROM Stuff
 const int motorStateAddress = 0;
-int lastWriteState = SCHRODINGER;
+int lastWriteState;
 
 void setup() {
   setupPins();
@@ -166,6 +167,7 @@ void setupPins() {
 void setInitialMotorState() {
   // Configure the initial umbrella state, reading from the EEPROM.
   motorState = readIntFromEEPROM(motorStateAddress);
+  lastWriteState = motorState;
   switch(motorState) {
     case OPEN:
       break;
@@ -179,14 +181,17 @@ void setLimits() {
   // Check that the opening amps fall within the allowable ranges.
   openingAmpLimit = openingAmpLimit < 0.0 ? 0.0 : openingAmpLimit > maxCurrentAmps ? maxCurrentAmps : openingAmpLimit;
   // Calculate opening volt limit
-  openingVoltLimit = (openingAmpLimit * voltsPerAmp) + motorVoltageMinimum;
+  openingVoltLimit = ((openingAmpLimit * voltsPerAmp) + motorVoltageMinimum) * dividerFactor;
 
   // Check that the closing amps fall within the allowable ranges.
   closingAmpLimit = closingAmpLimit < 0.0 ? 0.0 : closingAmpLimit > maxCurrentAmps ? maxCurrentAmps : closingAmpLimit;
   // Calculate closing volt limit
-  closingVoltLimit = (closingAmpLimit * voltsPerAmp) + motorVoltageMinimum;
+  closingVoltLimit = ((closingAmpLimit * voltsPerAmp) + motorVoltageMinimum) * dividerFactor;
+
+  // Check that the closing minimum amps fall within the allowable ranges.
+  closingMinimumAmpLimit = closingMinimumAmpLimit < 0.0 ? 0.0 : closingMinimumAmpLimit > maxCurrentAmps ? maxCurrentAmps : closingMinimumAmpLimit;
   // Calculate minimum closing voltage
-  closingMinimumVoltage = closingMinimumAmpLimit * voltsPerAmp;
+  closingMinimumVoltage = ((closingMinimumAmpLimit * voltsPerAmp) + motorVoltageMinimum) * dividerFactor;
 }
 
 // --- Loop functions
@@ -248,9 +253,6 @@ void handleDownButtonInput() {
             currentMonitorDelayStartTime = millis();
             motorState = CLOSING;
             break;
-          default:
-            motorState = SCHRODINGER;
-            break;
         }
       }
     }
@@ -281,12 +283,6 @@ void handleUpButtonInput() {
             }
             currentMonitorDelayStartTime = millis();
             motorState = OPENING;
-            break;
-          case CLOSING:
-          case OPENING:
-            motorState = SCHRODINGER;
-            break;
-          case OPEN:
             break;
         }
       }
@@ -335,7 +331,7 @@ void handleMotorLogic() {
     }
   }
 
-  // When closing, check against the pulse count and closedPulseState
+  // When closing, check against the min and max closing voltages
   if (motorState == CLOSING && (millis() - currentMonitorDelayStartTime > currentMonitorDelay)) { 
     float currentVoltage = analogToVoltage(analogRead(motorCurrentPin));
     if (currentVoltage >= closingVoltLimit || currentVoltage <= closingMinimumVoltage) {
@@ -351,6 +347,12 @@ void handleMotorLogic() {
 void handleRemoteCycle() {
   // If bypassRemoteCylcling then skip all the remote cycling logic
   if (bypassRemoteCylcling) {
+    remoteState = HIGH;
+    return;
+  }
+
+  // We should keep the remote on during opening or closing to that the cycle can be stopped without delay
+  if (motorState == CLOSING || motorState == OPENING) {
     remoteState = HIGH;
     return;
   }
